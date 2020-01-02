@@ -24,6 +24,7 @@ definition(
     iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/App-LetMyFriendsIn@2x.png",
 	singleInstance: true
 )
+//App code should have all icon urls set to empty string
 
 preferences {
 	page(name: "cloudLogin", title: "Cloud Login", nextPage:"", content:"cloudLogin", uninstall: true)
@@ -57,7 +58,7 @@ def cloudLogin() {
 		title: "Device Service Manager", 
 		nextPage: "selectDevices", 
 		uninstall: true) {
-		section(errorMsg)
+		section(errorMsg) {} //new {}
 		section(cloudLoginText) {
 			input( 
 				"userName", "email", 
@@ -126,7 +127,7 @@ def selectDevices() {
 		title: "Select Your Devices", 
 		install: true,
 		uninstall: true) {
-		section(errorMsg)
+		section(errorMsg){} //new {}
 		section(DevicesMsg) {
 			input "selectedDevices", "enum",
 			required:false, 
@@ -208,6 +209,7 @@ def getToken() {
 			headers: ['Authorization' : "Basic ${yaleAuthToken()}"],
             //headers: ['Authorization' : "Basic $toke"],
 			requestContentType: "application/x-www-form-urlencoded",
+			//in event of error// requestContentType: "application/json",
 			contentType: "application/json"
 	]
     try{
@@ -335,6 +337,7 @@ def ArmDisRef(mode){
 			body: [area: 1, mode: "${mode.value}"],
 			headers: ['Authorization' : "Bearer ${state.Token}"],
 			requestContentType: "application/x-www-form-urlencoded",
+			//in event of error// requestContentType: "application/json",
 			contentType: "application/json"
 	]
     try{
