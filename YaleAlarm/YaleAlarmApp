@@ -19,9 +19,9 @@ definition(
     author: "Mark Cockcroft",
     description: "manage yale conncetion",
     category: "Convenience",
-    iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/App-LetMyFriendsIn.png",
-    iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/App-LetMyFriendsIn@2x.png",
-    iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/App-LetMyFriendsIn@2x.png",
+    iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "",
 	singleInstance: true
 )
 //App code should have all icon urls set to empty string
