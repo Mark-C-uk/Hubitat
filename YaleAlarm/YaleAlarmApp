@@ -79,7 +79,9 @@ def cloudLogin() {
 				multiple: false,
 				options: ["Initial Install", "Add Devices", "Update Token"]
 			)
-            input("push", "bool", title: "Send push messages", required: true, displayDuringSetup: true, )
+            input("push", "bool", defaultValue: true, title: "Send push messages", required: true, displayDuringSetup: true )
+            input("sendPushMessageto", "capability.notification", title: "Send a Push notification to?", multiple: true, required: false)
+            input "logEnable", "bool", defaultValue: false, title: "Enable Debug Logging", description: "Enable extra logging"
 		}
 	}
 }
@@ -103,7 +105,7 @@ def selectDevices() {
 		errorMsg = "There were no devices from YALE"
 	}
 	def newDevices = [:]
-    log.debug "select devices, ${devices}"
+    if (logEnable) log.debug "select devices, ${devices}"
 	devices.each {
     	//log.debug "select devices each ${it.value.deviceId} - ${it.value.alias} - model ${it.value.deviceModel}"
 		def isChild = getChildDevice(it.value.deviceId) // deviceId changed to dni so dont add twice
@@ -140,7 +142,7 @@ def selectDevices() {
 def getDevices() {
 	def currentDevices = ''
 	currentDevices = getDeviceData()
-    log.info "get devices - ${currentDevices}"
+    if (logEnable) log.debug "get devices - ${currentDevices}"
 	state.devices = [:]
 	def devices = state.devices
 	currentDevices.each { //.data?.data
@@ -157,7 +159,7 @@ def getDevices() {
 	deviceP["deviceId"] = "RF:YalePan1"  
 	devices << ["RF:YalePan1": deviceP]
     
-    log.debug "arry $devices"
+    if (logEnable) log.debug "arry $devices"
 }
 
 def addDevices() {
@@ -214,7 +216,7 @@ def getToken() {
 	]
     try{
 	httpPost(paramsLogin) { responseLogin ->
-		log.debug "Login response is $responseLogin.data"
+		if (logEnable) log.debug "Login response is $responseLogin.data"
 		def respstatus = responseLogin?.status
         if (respstatus == 200){
         	state.Token = responseLogin?.data?.access_token
@@ -238,7 +240,7 @@ def getToken() {
         sendEvent(name: "TokenUpdate", value: state.currentError)
         errorhand("Error Token catch")
     }
-	log.debug "token end ${state.currentError}"
+	if (logEnable) log.debug "token end ${state.currentError}"
 }
 //	----- GET DEVICE DATA FROM THE CLOUD -----
 def getDeviceData() { // get details for adding
@@ -325,25 +327,25 @@ def getDeviceData() { // get details for adding
 
 private send(msg) {
     if ( push == true ) {
-        log.debug "sending push message - $msg" 
-        sendPush(msg)
+        log.trace "sending push message - $msg" 
+        sendPushMessageto.deviceNotification("$msg")
     }
 }
 //	----- ARM DISARM REFRESH -----
 def ArmDisRef(mode){
-	log.debug "Incoming Mode CMD ${mode.value} "
+	log.trace "Incoming Mode CMD ${mode.value} "
+    def respdata = ""
 	def paramsMode = [
 			uri: "https://mob.yalehomesystem.co.uk/yapi/api/panel/mode/",
 			body: [area: 1, mode: "${mode.value}"],
 			headers: ['Authorization' : "Bearer ${state.Token}"],
-			requestContentType: "application/x-www-form-urlencoded",
-			//in event of error// requestContentType: "application/json",
+			requestContentType: "application/x-www-form-urlencoded", //in event of error// requestContentType: "application/json",
 			contentType: "application/json"
 	]
     try{
 	httpPost(paramsMode) {	response ->
     	def respstatus = response?.status
-        def respdata = response?.data
+        respdata = response?.data
 		if (respstatus == 200){
             def respmsg = response?.data?.message
             if (state.errorCount != 0) {
@@ -352,10 +354,12 @@ def ArmDisRef(mode){
             if (state.currentError != null) {
 				state.currentError = null
             }
-            log.info "Mode $mode - '$respstatus' - '$respmsg' $respdata" 
+            log.info "Mode $mode - '$respstatus' - '$respmsg'" // $respdata" 
+            
+            
             if (respmsg != 'OK!'){
                	send("Alarm mode change to '$mode' issue, message $respmsg") //if door left open
-            }
+            }   
 		}
 		else { //response status not 200
         	log.error "Error in MODE '$respstatus' to $mode, ${state.currentError} - $respdata"
@@ -363,7 +367,6 @@ def ArmDisRef(mode){
 			respdata = 'error'
             errorhand("Error Arm/Dis/Ref NOT 200")
 		}
-		return respdata
 	}
     }
     catch (e){
@@ -371,6 +374,7 @@ def ArmDisRef(mode){
         state.currentError = e?.message
         errorhand("Error Arm/Dis/Ref Catch")
     }
+    return respdata
 }
 
 def errorhand (msg){
@@ -390,12 +394,18 @@ def updated() {
 }
 
 def initialize() {
-	log.debug "initialise"
+	log.info "initialise"
 	unsubscribe()
 	unschedule()
 	runEvery5Minutes(checkError)
     runEvery10Minutes(getDeviceData)
-    schedule(now() + 604800000, getToken) // once a week
+  //schedule(Date dateTime, String handlerMethod, Map options = null)
+  //schedule(String expression, String handlerMethod, Map options = null)
+    def toktime = now() + 604800000
+    if (logEnable) log.debug "$toktime"
+    schedule("15 0 3 ? * 1 *", getToken) // once a week
+    //schedule(now() + 604800000, getToken) // once a week
+	//if (selectedDevices) {
 	if (selectedDevices) {
 		addDevices()
 	}
