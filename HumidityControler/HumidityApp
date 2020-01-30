@@ -19,8 +19,8 @@ definition(
     author: "mc - Brian Critchlow",
     description: "Notify me when the humidity rises above or falls below the given threshold. It will turn on a switch when it rises above the first threshold and off when it falls below the second threshold.",
     category: "Convenience",
-    iconUrl: "https://graph.api.smartthings.com/api/devices/icons/st.Weather.weather9-icn",
-    iconX2Url: "https://graph.api.smartthings.com/api/devices/icons/st.Weather.weather9-icn?displaySize=2x",
+    iconUrl: " ",
+    iconX2Url: "",
     pausable: true
 )
 
@@ -36,7 +36,8 @@ preferences {
 		input "humidity2", "number", title: "Percentage ?"
 	}
     section( "Notifications" ) {
-        input "sendPushMessage", "enum", title: "Send a push notification?", metadata:[values:["Yes","No"]], required:false
+        input "sendPushMessage", "bool", title: "Send a push notification?", required: false, defaultValue: false
+        input "sendPushMessageto", "capability.notification", title: "Send a Push notification to?", multiple: true, required: false
         input "phone1", "phone", title: "Send a Text Message?", required: false
     }
 	section("Control this switch:") {
@@ -48,6 +49,9 @@ preferences {
   	section("Only when this switch is OFF") {
 		input "switch2", "capability.switch", title: "this switch when on will stop the app", required: false
 	}
+    section("loging"){
+        input "logEnable", "bool", defaultValue: false, title: "Enable Debug Logging", description: "Enable extra logging"
+    }
 }
 
 def installed() {
@@ -58,13 +62,14 @@ def updated() {
     installer()
 }
 def installer(){
-log.info "installer"
+    log.info "installer"
 	subscribe(humiditySensor1, "humidity", humidityHandler)
     subscribe(switch1, "switch", switchstate)
+    
 }
 
 def switchstate(evt){
-	log.info "HumSwitchEvt '${evt.device}' is '${evt.value}', App is '${state.appstate}'last humidity was '${state?.humstate}'"
+	if (logEnable) log.debug "Switch Event '${evt.device}' is '${evt.value}', App is '${state.appstate}'last humidity was '${state?.humstate}'"
 	state.sstate = evt.value
     if (state.appstate == "on"){
     	if (switch2 != null && switch2?.currentSwitch == "on" ) {
@@ -72,11 +77,16 @@ def switchstate(evt){
     		log.warn "Switch event - over ride switch is on app is now '${state.appstate}'"
         }
     	else if (evt.value == "off"){
-    		log.trace "${switch1.label} switch is '${evt.value}' , but App is still '${state.appstate}' turning on - Should be on event and app on"
-    		switch1?.on()
-    	sendEvent (name:"Switch Event",  value:"${switch1.label} is ${evt.value}")
+    		log.trace "${switch1.label} switch is '${evt.value}' , but App is still '${state.appstate}' & last humidity was '${state?.humstate}' turning ON"
+    	    sendEvent (name:"Switch Event",  value:"${switch1.label} is ${evt.value}")
+            runIn (5 , lagOn)
         }
 	}
+}
+
+def lagOn(){
+    switch1?.on()
+    if (logEnable) log.debug "Lag switch on"
 }
 
 def humidityHandler(evt) {
@@ -85,7 +95,7 @@ def humidityHandler(evt) {
     state.humstate = currentHumidity
 
 	if (switch2 != null && switch2?.currentSwitch == "on" ){
-    	Log.info "${switch2} & ${switch2?.currentSwitch}"
+    	if(logEnable) log.debug "${switch2} & ${switch2?.currentSwitch}"
     	if (state.appstate == "on" ){
         	state.appstate = "off"
              log.warn "Humidity event - over ride switch is turning app off"
@@ -132,13 +142,14 @@ def humidityHandler(evt) {
     else {
     	if (state.sstate == "off" && state.appstate == "on"){
         	traceaction = "MID - Switch off but app still on, turning on again, reset timer"
-        	switch1?.on()
-            timelag()
+        	runIn (5 , lagOn)
+            //timelag()
      	}
         else if (state.appstate == "on"){
         	traceaction = "MID - No action but reset timer"
-        timelag()
+        //timelag()
         }
+        timelag()
 	}
     log.trace "Humidity Event - ${traceaction}, Reported humidity: '${evt.value}%', Switch is-'${state.sstate}', App State is-'${state.appstate}'"
     sendEvent (name:"Humidity Event",  value:"${humiditySensor1.label} is ${evt.value}% - ${traceaction}")
@@ -146,25 +157,27 @@ def humidityHandler(evt) {
 }
 
 private send(msg) {
-    if ( sendPushMessage != "No" ) {
-        log.debug( "sending push message" )
-        sendPush( msg )
+    if ( sendPushMessage == true ) {
+        log.trace( "sending push message" )
+        sendPushMessageto.deviceNotification("$msg")
     }
 
     if ( phone1 ) {
-        log.debug( "sending text message" )
+        log.trace( "sending text message" )
         sendSms( phone1, msg )
     }
-    log.debug msg
+    if(logEnable)log.debug msg
 }
 
 def timelag(){
-	runIn (timeout*60 ?: 30*60, timeoff)
+    def timelag = timeout*60 ?: 30*60
+	runIn (timelag, timeoff)
+    if(logEnable) log.debug "runIn ${timelag/60}"
 }
 
 def timeoff (){ // don't get a humidity report for 30 min or defined time
 	def timelag = timeout*60 ?: 30*60
-	sendPush( "time off initated no events for '$timelag' min" )
+    sendPushMessageto.deviceNotification( "time off initated no events for ${timelag} min" )
 	log.warn "timeoff initated no events for '$timelag' min" 
     if (state.appstate == "on"){
     	state.appstate = "off"
