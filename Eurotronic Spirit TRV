@@ -4,19 +4,19 @@
 
 metadata {
 	definition (name: "Eurotronic Spirit TRV", namespace: "mark-c-uk", author: "Mark", ocfDeviceType: "oic.d.thermostat", vid: "generic-thermostat-1") { //, vid:"SmartThings-smartthings-Z-Wave_Thermostat"
-        capability "Thermostat Mode"
+//        capability "Thermostat Mode"
 		capability "Refresh"
 		capability "Battery"
-		capability "Thermostat Heating Setpoint"
-		capability "Health Check"
+//		capability "Thermostat Heating Setpoint"
+//		capability "Health Check"
 		capability "Thermostat"
-		capability "Temperature Measurement"
+//		capability "Temperature Measurement"
 		capability "Configuration"
         capability "Actuator"
-        capability "Sensor"
-        capability "Thermostat Cooling Setpoint"	//attribute- coolingSetpoint	command - setCoolingSetpoint - having both alows extra settings in routines
+//        capability "Sensor"
+//        capability "Thermostat Cooling Setpoint"	//attribute- coolingSetpoint	command - setCoolingSetpoint - having both alows extra settings in routines
         capability "Polling"
-        capability "Thermostat Operating State"
+//        capability "Thermostat Operating State"
         //capability "Switch"
 
         command "lock"
@@ -25,14 +25,14 @@ metadata {
         command "boostoff"
         command "ecoheat"
         command "ecooff"
-		command "temperatureUp"
-		command "temperatureDown"
-        command "summer" //summer mode to lock out temp changes in summer time
-        command "updated"
+//		command "temperatureUp"
+//		command "temperatureDown"
+//        command "summer" //summer mode to lock out temp changes in summer time
+//        command "updated"
 
 		attribute "minHeatingSetpoint", "number" //google alex compatability // shuld be part of heating setpoint to test without//	
 		attribute "maxHeatingSetpoint", "number" //google alex compatability // shuld be part of heating setpoint to test without//	
-		attribute "summer", "String" //for feed
+//		attribute "summer", "String" //for feed
         attribute "thermostatTemperatureSetpoint", "String"						//need for google
         attribute "valve", "String"
         
@@ -86,12 +86,11 @@ def parse(String description) {
         def cmd = zwave.parse(description)
         if (cmd) {
             result += zwaveEvent(cmd)
-            //log.debug "Parsed ${cmd} to ${result.inspect()}"
+            log.info "${device.displayName} - Parsed ${cmd} " //to ${result.inspect()}
         } else {
             log.warn "Non-parsed event: ${description}"
         }
     }
-    return result
 }
 
 def zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd) {
@@ -108,9 +107,11 @@ def zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport 
             map.unit = cmd.scale == 1 ? "%" : ""
             break;
 	}
-    log.info "RepRecived $cmd"
-    return createEvent(map)
-    //sendEvent(map)
+    //log.info "RepRecived $cmd"
+    sendEvent(map)
+    //return createEvent(map)
+    return
+    
 }
 
 def zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
@@ -124,9 +125,10 @@ def zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
     	map.value = cmd.batteryLevel
     }
     state.lastBatteryReportReceivedAt = new Date().time // Store time of last battery update so we don't ask every wakeup, see WakeUpNotification handler
-    log.info "RepRecived $cmd"
-    return createEvent(map)
-	//sendEvent(map)
+    //log.info "RepRecived $cmd"
+    //return createEvent(map)
+	sendEvent(map)
+    return
 }
 
 def zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
@@ -135,10 +137,11 @@ def zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
                 result << sendEvent(descriptionText: "$device.displayName is associated in group ${cmd.groupingIdentifier}")
         } else if (cmd.groupingIdentifier == 1) {
                 // We're not associated properly to group 1, set association
-                result << sendEvent(descriptionText: "Associating $device.displayName in group ${cmd.groupingIdentifier}")
+                //result << 
+                    sendEvent(descriptionText: "Associating $device.displayName in group ${cmd.groupingIdentifier}")
                 result << response(zwave.associationV1.associationSet(groupingIdentifier:cmd.groupingIdentifier, nodeId:zwaveHubNodeId))
         }
-        log.info "RepRecived $cmd"
+        //log.info "RepRecived $cmd"
         return result
 }
 
@@ -161,7 +164,9 @@ def zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cm
 def zwaveEvent(hubitat.zwave.Command cmd) {
 	def map = [ descriptionText: "${device.displayName}: ${cmd}" ]
 	log.warn "mics zwave.Command - ${device.displayName} - $cmd"
-    return sendEvent(map)
+    //return sendEvent(map)
+    sendEvent(map)
+    return
 }
 
 def zwaveEvent(hubitat.zwave.commands.thermostatmodev2.ThermostatModeSupportedReport cmd) {
@@ -174,10 +179,10 @@ def zwaveEvent(hubitat.zwave.commands.thermostatmodev2.ThermostatModeSupportedRe
 		if(cmd.auxiliaryemergencyHeat) { supportedModes << "emergency heat" } //boost
     	if (cmd.energySaveHeat) { supportedModes << "eco"} //eco //removed 4/2/19 == true)
 	state.supportedModes = supportedModes //.toString()
-    log.info "modes are ${state.supportedModes}"
+    //log.info "modes are ${state.supportedModes}"
 	
     //updateDataValue("availableThermostatModes", supportedModes.toString())
-    log.info "RepRec $cmd, modes are $supportedModes"
+    //log.info "RepRec $cmd, modes are $supportedModes"
     return sendEvent(name: "supportedThermostatModes", value: supportedModes, displayed: false)
 }
 
@@ -186,17 +191,19 @@ def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecifi
 	if (cmd.productTypeId) { updateDataValue("productTypeId", cmd.productTypeId.toString()) }
 	if (cmd.productId) { updateDataValue("productId", cmd.productId.toString()) }
     if (cmd.manufacturerId){ updateDataValue("manufacturerId", cmd.manufacturerId.toString()) }
-    log.info "RepRecived $cmd"
+    //log.info "RepRecived $cmd"
 }
 
 def zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd ) {
-    log.info "RepRecived $cmd"
+    //log.info "RepRecived $cmd"
     //cmd
 }
 
 def zwaveEvent(hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd){
-	log.info "RepRecived - $cmd - - Valve open '${cmd.value}'%"
-    return createEvent(name: "valve", value: cmd.value, unit: "%", descriptionText: "Valve open '${cmd.value}'%")
+	//log.info "RepRecived - $cmd - - Valve open '${cmd.value}'%"
+    //return createEvent(name: "valve", value: cmd.value, unit: "%", descriptionText: "Valve open '${cmd.value}'%")
+    sendEvent(name: "valve", value: cmd.value, unit: "%", descriptionText: "Valve open '${cmd.value}'%")
+    return
 }
 
 def zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd){
@@ -222,12 +229,13 @@ def zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd){
         //state.switch = "off"
     }
     //254 - 0xFE = direct valve contol mode
-    event << createEvent(name: "thermostatMode", value: state.thermostatMode, displayed: true)
-    event << createEvent(name: "thermostatOperatingState", value: state.thermostatOperatingState, displayed: true)
+   // event << 
+    sendEvent(name: "thermostatMode", value: state.thermostatMode, displayed: true)
+    sendEvent(name: "thermostatOperatingState", value: state.thermostatOperatingState, displayed: true)
     //event << createEvent(name: "switch", value: state.switch, displayed: false)
     
-	log.info "RepRecived ${cmd}, ${state.thermostatMode}, ${state.thermostatOperatingState}"
-    return event
+	//log.info "RepRecived ${cmd}, ${state.thermostatMode}, ${state.thermostatOperatingState}"
+    return
 }
 
 def zwaveEvent(hubitat.zwave.commands.thermostatmodev2.ThermostatModeReport cmd ) {
@@ -252,12 +260,13 @@ def zwaveEvent(hubitat.zwave.commands.thermostatmodev2.ThermostatModeReport cmd 
         state.thermostatOperatingState = "idle"
         //state.switch = "off"
     }
-    event << createEvent(name: "thermostatMode", value: state.thermostatMode)
-    event << createEvent(name: "thermostatOperatingState", value: state.thermostatOperatingState)
+    //event <<
+    sendEvent(name: "thermostatMode", value: state.thermostatMode)
+    sendEvent(name: "thermostatOperatingState", value: state.thermostatOperatingState)
     //event << createEvent(name: "switch", value: state.switch, displayed: false)
     
-	log.info "RepRecived ${cmd}, ${state.thermostatMode}, ${state.thermostatOperatingState}"
-    return event
+	//log.info "RepRecived ${cmd}, ${state.thermostatMode}, ${state.thermostatOperatingState}"
+    return
 }
 
 def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointReport cmd) { //	Parsed ThermostatSetpointReport(precision: 2, reserved01: 0, scale: 0, scaledValue: 21.00, setpointType: 1, size: 2, value: [8, 52])
@@ -267,17 +276,17 @@ def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointRep
     def radiatorSetPoint = cmd.scaledValue
 
     if (cmd.setpointType == 1 ) { //this is the standard heating setpoint //sendEvent
-        //event << createEvent(name: "nextHeatingSetpoint", value: radiatorSetPoint, unit: getTemperatureScale(), displayed: true)
-       	event << createEvent(name: "heatingSetpoint", value: radiatorSetPoint.toString(), unit: getTemperatureScale(), displayed: true)
-        event << createEvent(name: "coolingSetpoint", value: radiatorSetPoint.toString(), unit: getTemperatureScale(), displayed: false)
-		event << createEvent(name: "thermostatSetpoint", value: radiatorSetPoint.toString(), unit: getTemperatureScale(), displayed: false)
-        event << createEvent(name: "thermostatTemperatureSetpoint", value: radiatorSetPoint.toString(), unit: "C", displayed: false)
+        sendEvent(name: "heatingSetpoint", value: radiatorSetPoint.toString(), unit: getTemperatureScale(), displayed: true)
+        //event << createEvent(name: "coolingSetpoint", value: radiatorSetPoint.toString(), unit: getTemperatureScale(), displayed: false)
+		//event << 
+            sendEvent(name: "thermostatSetpoint", value: radiatorSetPoint.toString(), unit: getTemperatureScale(), displayed: false)
+        sendEvent(name: "thermostatTemperatureSetpoint", value: radiatorSetPoint.toString(), unit: "C", displayed: false)
 	}
     if (cmd.setpointType == 11 ) { // this is eco heat setting on this device
     	//event << createEvent(name: "coolingSetpoint", value: radiatorSetPoint.toString(), unit: getTemperatureScale(), displayed: false)
     }
-    log.info "RepRec ${cmd}"
-    return event //List
+    //log.info "RepRec ${cmd}"
+    return
 }
 
 def setDeviceLimits() { // for google and amzon compatability
@@ -299,7 +308,7 @@ def setHeatingSetpoint(Double degrees) { //Double added
 	cmds << zwave.thermostatSetpointV2.thermostatSetpointGet(setpointType: 1)
 			
 	log.trace "Setting Temp to ${degrees},  $cmds"
-	return secureSequence(cmds)
+	secureSequence(cmds)
 }
 
 def lock() {
@@ -329,16 +338,16 @@ def boost() {
     cmds << zwave.thermostatModeV2.thermostatModeSet(mode: 0x0F)
     cmds << zwave.thermostatModeV2.thermostatModeGet()
 	log.trace "Boost On $cmds"
-    return secureSequence(cmds)
+    secureSequence(cmds)
 }
 def boostoff() {
 	log.trace "Boost Off"
-    return heat()
+    heat()
 }
 
 def cool(){
 	log.trace "cool to eco"
-	return ecoheat()
+	ecoheat()
 }
 def ecoheat() {
 	def cmds = []
@@ -346,27 +355,27 @@ def ecoheat() {
     cmds << zwave.thermostatModeV2.thermostatModeSet(mode: 11)
     cmds << zwave.thermostatModeV2.thermostatModeGet()
     log.trace "Eco/Cool Heat $cmds"
-    return secureSequence(cmds)
+    secureSequence(cmds)
 }
 def ecooff() {
 	log.trace "eco Off"
-    return heat()
+    heat()
 }
 
 def on() {
 	log.trace "on to heat"
-    return heat()
+    heat()
 }
 def auto(){
 	log.trace "auto to heat"
-	return heat()
+	heat()
 }
 def heat() {
     def cmds = []
 	cmds << zwave.thermostatModeV2.thermostatModeSet(mode: 1) //1
     cmds << zwave.thermostatModeV2.thermostatModeGet()
 	log.trace "heat $cmds" 
-    return secureSequence (cmds)
+    secureSequence (cmds)
 }
 
 def off() {
@@ -374,7 +383,7 @@ def off() {
 	cmds << zwave.thermostatModeV2.thermostatModeSet(mode: 0) //0
     cmds << zwave.thermostatModeV2.thermostatModeGet()
 	log.trace "OFF $cmds" 
- 	return secureSequence(cmds)
+ 	secureSequence(cmds)
 }
                            
 def setThermostatMode(mode){
@@ -397,7 +406,7 @@ def setThermostatMode(mode){
     }
     //"rush hour" ??
 	log.debug "set mode $mode commands - $cmds" 
-    return secureSequence(cmds)
+    secureSequence(cmds)
 }
 
 def refresh() {
@@ -442,7 +451,6 @@ def poll() { // If you add the Polling capability to your device type, this comm
 	def cmds = []
 
     if (!state.lastBatteryReportReceivedAt || (new Date().time) - state.lastBatteryReportReceivedAt > daysToTime(1)) {
-		log.trace "POLL - Asking for battery report as over 1 days since"
        	cmds << zwave.batteryV1.batteryGet()
 	}
 	//once an hour ask for everything
@@ -450,15 +458,16 @@ def poll() { // If you add the Polling capability to your device type, this comm
     	cmds <<	zwave.thermostatSetpointV1.thermostatSetpointGet(setpointType: 11) 	// get eco/cool setpoint
     	cmds <<	zwave.basicV1.basicGet()											// get mode (basic)	
     	//cmds <<	zwave.thermostatSetpointV2.thermostatSetpointGet(setpointType: 1)	// get heating setpoint
-        cmds <<	zwave.thermostatModeV2.thermostatModeGet()							// get mode
+        //cmds <<	zwave.thermostatModeV2.thermostatModeGet()							// get mode
         state.extra = new Date().time
     }
     cmds <<	zwave.sensorMultilevelV1.sensorMultilevelGet()						// get temp
 	cmds << zwave.switchMultilevelV3.switchMultilevelGet()						// valve position
     cmds <<	zwave.thermostatSetpointV2.thermostatSetpointGet(setpointType: 1)	// get heating setpoint	
+    cmds <<	zwave.thermostatModeV2.thermostatModeGet()							// get mode
     
-    log.trace "POLL $cmds"
-    return secureSequence (cmds)
+    log.trace "${device.displayName} - POLL $cmds"
+    secureSequence (cmds)
 }
 
 def daysToTime(days) {
@@ -490,7 +499,7 @@ def configure() {
 
     sendEvent(name: "configure", value: "configure", displayed: false)   
 	log.trace "config"
-    return secureSequence(cmds)
+    secureSequence(cmds)
 }
 
 def secure(hubitat.zwave.Command cmd) {
@@ -504,7 +513,7 @@ def secure(hubitat.zwave.Command cmd) {
 	}
 }
 
-def secureSequence(commands, delay=2500) { //1500
+def secureSequence(commands, delay=1200) { //1500 //700
 //log.debug "SeSeq $commands"
 	//delayBetween(commands.collect{ secure(it) }, delay)
     //sendHubCommand(commands.collect{ response(secure(it)) }, delay)
