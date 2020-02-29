@@ -49,14 +49,16 @@ preferences {
         input "wbuzzer", "capability.tone", title: "Select a warning buzzer.... only pick each device once", multiple: true, required: false
     }
     section( "Notifications" ) {
-            input "pusherror", "bool", title: "send push for all, off will just be errors", required: false
+        input "pusherror", "bool", title: "send push for all, off will just be errors", required: false
 	    input "sendPushMessage", "capability.notification", title: "Send a push notification?", multiple: true, required: true
-            input "phone1", "phone", title: "Send a Text Message?", required: false
-	    input "talkOn", "capability.musicPlayer", title: "talk on..WIP", multiple: true, required: false
+        //input "phone1", "phone", title: "Send a Text Message?", required: false
+	    //input "talkOn", "capability.musicPlayer", title: "talk on..WIP", multiple: true, required: false
+        input "talkOn", "capability.speechSynthesis", title: "talk on.. speach", multiple: true, required: false
+        input "volSpeech", "number", title: "Speaker volume for speech", description: "0-100", required: false //required: true
         }
     }
 
-}
+
 
 def installed() {
 	installer()
@@ -149,6 +151,10 @@ def virtualgdcontactHandler(evt) {
         	if (wbuzzer){wbuzzer.beep()}
         	if (wlight) {wlight.on()}
             if (walarm) {walarm.both()}
+            if (talkOn) {
+                if(volSpeech) { talkOn.setVolume(volSpeech)}
+				talkOn.speak("warning, closing")
+            }
         	if (closer != null){ //2 switches
         		msg = "sending close command to ${closer.label} the actual controler"
                 runIn( lag ?: 6, "lagclose")
@@ -207,6 +213,7 @@ private mysend(msg, error) {
         if (pusherror == true || error == "WARN") {
             log.trace("sending push message")
             sendPushMessage.deviceNotification(msg)
+            //sendPushMessageto.deviceNotification("$msg")
         }
 
         if (phone1) {
