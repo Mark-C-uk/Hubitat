@@ -39,7 +39,7 @@ def logsOff(){
     device.updateSetting("logEnable",[value:"false",type:"bool"])
 }
 def updated(){
-    log.info "updated..."
+    log.info "${device.displayName} updated..."
 	configure()
 }   
 def parse(String description) {
@@ -48,7 +48,7 @@ def parse(String description) {
 	def cmd = zwave.parse(description)
 	if (cmd) {
 		result = zwaveEvent(cmd)
-		log.info "Parsed '${cmd}'" // to ${result.inspect()}" //result.inspect shows all the decoded details removed to keep debugin tidye
+		log.info "${device.displayName} - Parsed '${cmd}'" // to ${result.inspect()}" //result.inspect shows all the decoded details removed to keep debugin tidye
 	}
 	else {
 		log.warn "Non-parsed event: ${description} - cmd = '${cmd}'"
@@ -107,24 +107,24 @@ def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointRep
 	//def nextTemperature = currentDouble("nextHeatingSetpoint")	// app next setpoint
 	def currentTemperature = device.currentValue("heatingSetpoint").doubleValue()	//current app setpoint
 	def nextTemperature = device.currentValue("nextHeatingSetpoint").doubleValue()
-    log.debug "setpoint report temps current = $currentTemperature , next = $nextTemperature"
+    if (logEnable) log.debug "${device.displayName} - setpoint report temps device rep = $radiatorTemperature , next = $nextTemperature"
     def discText = ""
         
 	if(radiatorTemperature != currentTemperature){
         if(state.lastSentTemperature == radiatorTemperature) {
 			discText = "Temperature changed by app to ${radiatorTemperature}°" + getTemperatureScale() + "."
-        	log.info "ThermostatSetpointReport - '${discText}'"
+        	log.info "${device.displayName} - ThermostatSetpointReport - '${discText}'"
         }
 		else {
         	discText = "Temperature changed manually to ${radiatorTemperature}°" + getTemperatureScale() + "."
-			log.info "ThermostatSetpointReport -'${discText}'"
+			log.info "${device.displayName} - ThermostatSetpointReport -'${discText}'"
 			state.lastSentTemperature = radiatorTemperature
-            eventList << createEvent(name:"nextHeatingSetpoint", value: state.lastSentTemperature, unit: getTemperatureScale(), displayed: false)
+            eventList << createEvent(name:"nextHeatingSetpoint", value: state.lastSentTemperature, unit: getTemperatureScale())
 		}
 	}
     if (state.productId == "4") { //if device (4) dosent report temp
         eventList << createEvent(name: "temperature", value: radiatorTemperature, , descriptionText: "fake temp" )
-        log.info "device (4) dosent report temp fake temp"
+        //log.debug "${device.displayName} device type 4 dosent report - temp fake temp"
     }
     if(radiatorTemperature > (quickOffTemperature ?: fromCelsiusToLocal(4))) { //if on
         if (logEnable) log.debug "on heat"
@@ -138,7 +138,7 @@ def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointRep
         eventList << createEvent(name: "thermostatOperatingState", value: "idle")
         updateDataValue("lastRunningMode", "cool")
     }
-    eventList << createEvent(name: "heatingSetpoint", value: radiatorTemperature, unit: getTemperatureScale(), displayed: false, descriptionText:discText)
+    eventList << createEvent(name: "heatingSetpoint", value: radiatorTemperature, unit: getTemperatureScale(), descriptionText:discText)
 	eventList << createEvent(name: "thermostatSetpoint", value: radiatorTemperature, unit: getTemperatureScale(), descriptionText:discText)
     
 	return eventList
@@ -168,8 +168,7 @@ def zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport 
     
     return events
 }
-//////////////////////
-///////////////////// up to ///////////////
+
 def zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd) {
 //log.debug "Wakey wakey zwaveEvent ${cmd}"
     def event = []
@@ -243,10 +242,10 @@ def zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd) {
     
     cmds << zwave.wakeUpV2.wakeUpNoMoreInformation().format()
 
-    log.trace "WakeUp - commands are ${cmds}, command count is $state.ComCount"
+    log.trace "${device.displayName} - WakeUp - commands are ${cmds}, command count is $state.ComCount"
     state.ComCount = 0
   	    
-   return [event, response(delayBetween(cmds, 2500))] //was 1s or 1000
+   return [event, response(delayBetween(cmds, 700))] //was 1s or 1000 2500
 }
 
 def zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
@@ -352,7 +351,7 @@ def configure() {
     state.configrq = true
     state.lastClockSet = ""
     state.wakeUpEvery = wakeUpEvery
-    log.info "Configure - storing wakeUpInterval for next wake '$state.wakeUpEvery'seconds AND configuration flag is $state.configrq"
+    log.info "${device.displayName} - Configure storing wakeUpInterval for next wake '$state.wakeUpEvery'seconds AND configuration flag is $state.configrq"
     log.warn "debug logging is: ${logEnable == true}"
 	if (logEnable) runIn(1800,logsOff)
 }
