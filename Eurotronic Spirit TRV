@@ -89,7 +89,7 @@ def zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport 
         	map.name = "temperature"
             map.unit = cmd.scale == 1 ? "F" : "C"
             state.temperature = cmd.scaledSensorValue //.toString()
-        if (state.temperature.toFloat() < device.currentValue("thermostatSetpoint").toFloat()){ //device.currentValue("thermostatSetpoint")
+        if (state.thermostatMode == "off" && state.temperature.toFloat() < device.currentValue("thermostatSetpoint").toFloat()){ //device.currentValue("thermostatSetpoint")
             sendEvent(name: "thermostatOperatingState", value: "heating")
             state.thermostatOperatingState = "heating"
         }
@@ -157,7 +157,7 @@ def zwaveEvent(hubitat.zwave.Command cmd) {
     sendEvent(map)
 }
 
-def zwaveEvent(hubitat.zwave.commands.thermostatmodev2.ThermostatModeSupportedReport cmd) {
+def zwaveEvent(hubitat.zwave.commands.thermostatmodev2.ThermostatModeSupportedReport cmd) { //bug in HE reported all are null for some reson, work ok in ST
     log.debug "therModeReport ${cmd}"
     def supportedModes = []
 	
