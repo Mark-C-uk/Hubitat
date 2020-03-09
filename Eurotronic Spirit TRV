@@ -195,17 +195,18 @@ def zwaveEvent(hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelReport 
 }
 
 def zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd){
-	def event = [ ]
+	
+    log.debug "basic ${cmd.value}"
+    def event = [ ]
 	if (cmd.value == 255) { //255 - 0xFF = normall mode
     	state.thermostatMode = "heat"
-        //state.thermostatOperatingState = "heating"
     }
     else if (cmd.value == 15){ //15 - 0x0F = off
     	state.thermostatMode = "off"
         state.thermostatOperatingState = "idle"
         event << sendEvent(name: "thermostatOperatingState", value: state.thermostatOperatingState)
     }
-    if (cmd.value == 240){ //240 - 0xF0 = boost
+    else if (cmd.value == 240){ //240 - 0xF0 = boost
     	state.thermostatMode = "emergency heat"
     }
     else if (cmd.value == 0){ //0 - 0x00 = eco
@@ -214,7 +215,6 @@ def zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd){
     //ToDo 254 - 0xFE = direct valve contol mode
     else {
         state.thermostatMode = "NK"
-        state.thermostatOperatingState = "NK"
         event << sendEvent(name: "thermostatMode", value: state.thermostatMode)
     }
     //log.info "RepRecived ${cmd}, ${state.thermostatMode}, ${state.thermostatOperatingState}"
@@ -225,24 +225,21 @@ def zwaveEvent(hubitat.zwave.commands.thermostatmodev2.ThermostatModeReport cmd 
     def event = []
     if (cmd.mode == 0x01){ //1 normall heat 0x01 1
     	state.thermostatMode = "heat"
-        state.thermostatOperatingState = "heating"
     }
     if (cmd.mode == 0x0F){ //15 boost 0x0F 15
     	state.thermostatMode = "emergency heat"
-        state.thermostatOperatingState = "emergency heat"
     }
     if (cmd.mode == 0x0B){ //11 eco 11 0x0B 11
     	state.thermostatMode = "cool"
-        state.thermostatOperatingState = "pending heat"
     }
     if (cmd.mode == 0x00){ // 0 off 0x00 0
     	state.thermostatMode = "off"
         state.thermostatOperatingState = "idle"
+        event << sendEvent(name: "thermostatOperatingState", value: state.thermostatOperatingState)
     }
     event << sendEvent(name: "thermostatMode", value: state.thermostatMode)
-    event << sendEvent(name: "thermostatOperatingState", value: state.thermostatOperatingState)
    
-	//log.info "RepRecived ${cmd}, ${state.thermostatMode}, ${state.thermostatOperatingState}"
+	//log.info "RepRecived ${cmd}, ${state.thermostatMode}"
     event
 }
 
@@ -436,7 +433,8 @@ def poll() {
     cmds <<	zwave.sensorMultilevelV1.sensorMultilevelGet()						// get temp
 	cmds << zwave.switchMultilevelV3.switchMultilevelGet()						// valve position
     //cmds <<	zwave.thermostatSetpointV2.thermostatSetpointGet(setpointType: 1)	// get heating setpoint	
-    //cmds <<	zwave.thermostatModeV2.thermostatModeGet()							// get mode
+    //cmds <<	zwave.thermostatModeV2.thermostatModeGet()	// get mode
+    cmds <<	zwave.basicV1.basicGet()	
     
     log.trace "${device.displayName} - POLL $cmds"
     secureSequence (cmds)
