@@ -43,12 +43,12 @@ def updated(){
 	configure()
 }   
 def parse(String description) {
-	//if (logEnable) log.debug "PARSE RAW - $description"
+	if (logEnable) log.info "PARSED $description"
 	def result = null
 	def cmd = zwave.parse(description)
 	if (cmd) {
 		result = zwaveEvent(cmd)
-		log.info "${device.displayName} - Parsed '${cmd}'" // to ${result.inspect()}" //result.inspect shows all the decoded details removed to keep debugin tidye
+		if (logEnable) log.info "${device.displayName} - Parsed '${cmd}'" // to ${result.inspect()}" //result.inspect shows all the decoded details removed to keep debugin tidye
 	}
 	else {
 		log.warn "Non-parsed event: ${description} - cmd = '${cmd}'"
@@ -96,7 +96,7 @@ def zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalCapabilitiesReport 
 }
 
 def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointReport cmd) {
-    if (logEnable) log.debug "ThermostatSetpointReport ${cmd}"
+    //log.info "${device.displayName} - $cmd"
 	state.scale = cmd.scale	// So we can respond with same format later, see setHeatingSetpoint()
 	state.precision = cmd.precision
 
@@ -146,7 +146,7 @@ def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointRep
 
 //Recives the actual temperature from the TRV.
 def zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd) {
-    if (logEnable) log.debug "Recive temparture value from device zwaveEvent $cmd"
+    if (logEnable) log.info "${device.displayName} - $cmd"
 	def events = []
 	if (cmd.sensorType == 0x01) {
 		def reportedTemperatureValue = cmd.scaledSensorValue
@@ -242,13 +242,14 @@ def zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd) {
     
     cmds << zwave.wakeUpV2.wakeUpNoMoreInformation().format()
 
-    log.trace "${device.displayName} - WakeUp - commands are ${cmds}, command count is $state.ComCount"
+    log.trace "${device.displayName} - WakeUp - outbound commands are ${cmds}, command count is $state.ComCount"
     state.ComCount = 0
   	    
    return [event, response(delayBetween(cmds, 700))] //was 1s or 1000 2500
 }
 
 def zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
+    if (logEnable) log.info "${device.displayName} - $cmd"
 	def map = [ name: "battery", unit: "%" ]
 	if (cmd.batteryLevel == 0xFF) {  // Special value for low battery alert
 		map.value = 1
@@ -258,7 +259,7 @@ def zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
 		map.value = cmd.batteryLevel
 	}
 	state.lastBatteryReportReceivedAt = new Date().time	// Store time of last battery update so we don't ask every wakeup, see WakeUpNotification handler
-	return createEvent(map)
+    return createEvent(map)
 }
 
 def currentTimeCommand() {
