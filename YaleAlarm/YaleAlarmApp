@@ -34,7 +34,7 @@ preferences {
 def setInitialStates() {
 	if (!state.Token) {state.Token = null}
 	if (!state.devices) {state.devices = [:]}
-	if (!state.currentError) {state.currentError = null}
+	if (!state.currentError) {state.currentError = "none"}
 	if (!state.errorCount) {state.errorCount = 0}
 }
 
@@ -49,7 +49,7 @@ def cloudLogin() {
 		"	Add Devices: Only add devices.\n\r" +
 		"	Update Token:  Updates the token.\n\r"
 	def errorMsg = ""
-	if (state.currentError != null){
+	if (state.currentError != "none"){
 		errorMsg = "Error communicating with cloud:\n\r\n\r${state.currentError}" +
 			"\n\r\n\rPlease resolve the error and try again.\n\r\n\r"
 		}
@@ -92,12 +92,12 @@ def selectDevices() {
 	if (updateToken != "Add Devices") {
 		getToken()
 	}
-	if (state.currentError != null || updateToken == "Update Token") {
+	if (state.currentError != "none" || updateToken == "Update Token") {
 		return cloudLogin()
 	}
 	getDevices()
 	def devices = state.devices
-	if (state.currentError != null) {
+	if (state.currentError != "none") {
 		return cloudLogin()
 	}
 	def errorMsg = ""
@@ -186,7 +186,7 @@ def addDevices() {
 				device.value.deviceId,
 				hubId, [
 					"label": "${device.value.alias} Yale",
-					"name": device.value.deviceModel,
+					"name": "YaleApp Device",
 					"data": [
 						"deviceId" : device.value.deviceId,
 					]
@@ -205,6 +205,7 @@ def yaleAuthToken () {
 def getToken() {
 	//def toke = createAccessToken()
 	//log.debug "Attempting to login for new token tringin this $toke"
+    def eventlist = []
 	def paramsLogin = [
 			uri: "https://mob.yalehomesystem.co.uk/yapi/o/token/",
 			body: [grant_type: "password", username: "${userName}" , password: "${userPassword}"],
@@ -221,15 +222,15 @@ def getToken() {
         if (respstatus == 200){
         	state.Token = responseLogin?.data?.access_token
     		log.info "$respstatus - Token updated to ${state.Token}"
-    		sendEvent(name: "TokenUpdate", value: "tokenUpdate Successful.")
-            if (state.currentError != null) {
-				state.currentError = null
+    		eventlist << sendEvent(name: "TokenUpdate", value: "tokenUpdate Successful.")
+            if (state.currentError != "none") {
+				state.currentError = "none"
 			}
     	}
     	else {
 			state.currentError = "token error $respstatus, ${responseLogin?.data}" //responseLogin.message
 			log.error "Error in getToken: ${state.currentError}, ${responseLogin?.data}"
-			sendEvent(name: "TokenUpdate", value: state.currentError)
+			eventlist << sendEvent(name: "TokenUpdate", value: state.currentError)
             errorhand("Error Token NOT 200")
 		}
 	}
@@ -237,14 +238,16 @@ def getToken() {
     catch (e){
     	log.error "Error token: ${e}, ${e?.message}"
         state.currentError = e?.message
-        sendEvent(name: "TokenUpdate", value: state.currentError)
+        eventlist << sendEvent(name: "TokenUpdate", value: state.currentError)
         errorhand("Error Token catch")
     }
 	if (logEnable) log.debug "token end ${state.currentError}"
+    return eventlist
 }
 //	----- GET DEVICE DATA FROM THE CLOUD -----
 def getDeviceData() { // get details for adding
 	//log.debug "getDeviceData"
+    def eventlist = []
 	def currentDevices = ''
     def getDeviceStatus = [
 			uri: "https://mob.yalehomesystem.co.uk/yapi/api/panel/device_status/",
@@ -256,26 +259,35 @@ def getDeviceData() { // get details for adding
         def respdata = response?.data
 		//log.debug "get device data devices ${response.status} , ${response?.data}"
         if (respstatus == 200){
-        	if (state.errorCount != 0) {
-				state.errorCount = 0
-			}
-        	if (state.currentError != null) {
-				state.currentError = null
-			}
+        	if (state.errorCount != 0) {state.errorCount = 0}
+        	if (state.currentError != "none") { 
+                state.currentError = "none"	
+            }
         	currentDevices = response?.data?.data
-	        currentDevices.each {
+	        
+            currentDevices.each {
         		//log.debug "it ${it?.name} - ${it?.device_id}"
 				def isChild = getChildDevice(it?.device_id)
+
             	if (isChild) {
-                	log.info "Sending status of '${it?.status_open[0]}' to child '${it?.name}'" 
-                	isChild.datain(it)
+                	//log.info "Sending status of '${it?.status_open[0]}' to child '${it?.name}'" 
+                	isChild.datain(it) //reenabled
+                    //log.debug "${it?.status_open[0]}"
+                    
+/*                    def OpCl = ""
+                    if (it?.status_open[0] == "device_status.dc_close") { OpCl = "closed" }
+                    else { OpCl = "open" }
+                    sendEvent(isChild, [name: "contact", value: OpCl])
+*/
                 }
         	}
+            eventlist << sendEvent(name: "getdevicedata devices", value: "all good")
         }
 		else {
 			state.currentError = "error get devices $respstatus - $respdata"
 			log.error "Get device data NOT 200 - ${state.currentError}"
             errorhand("Get device data NOT 200")
+            eventlist << sendEvent(name: "getdevicedata devices", value: "yale error")
 		}
 	}
     }
@@ -284,6 +296,7 @@ def getDeviceData() { // get details for adding
     	log.error "Error device data: ${ed}, ${ed?.message}"
         state.currentError = ed?.message
         errorhand("Get device data catch")
+        eventlist << sendEvent(name: "getdevicedata devices ", value: "catch error")
     }
 	def getPanelStatus = [
 			uri: "https://mob.yalehomesystem.co.uk/yapi/api/panel/mode/", //	api/panel/mode/",
@@ -296,23 +309,25 @@ def getDeviceData() { // get details for adding
 //log.debug "get device data - pannel ${response.status} ---- ${respdata} -------- ${response}"
         if (respstatus == 200){
         	def respmsg = response?.data?.message
-        	if (state.currentError != null) {
-				state.currentError = null
+        	if (state.currentError != "none") {
+				state.currentError = "none"
 			}
         	//log.debug "Pannel request good - ${response.data.data.getAt(0)} , ${response.data.message}" //${response.data}
         	def isChild = getChildDevice('RF:YalePan1')
             	if (isChild) {
-                	log.info "Sending status of '${response.data.data}', '$respmsg' to AlarmPannel" 
+                	//log.info "Sending status of '${response.data.data}', '$respmsg' to AlarmPannel" 
                 	isChild.datain(respdata)
                 	if (respmsg != 'OK!'){
                     	send("Alarm updated with message $respmsg")   
                     }
                 }
+            eventlist << sendEvent(name: "getdevicedata pannel", value: "all good")
         }
         else {
 			state.currentError = "error get pannel $respstatus - $respdata"
 			log.error "Get pannel data NOT 200 - ${state.currentError}"
             errorhand("Get pannel data NOT 200")
+            eventlist << sendEvent(name: "getdevicedata pannel", value: "yale error")
 		}
 	}
     }
@@ -320,8 +335,9 @@ def getDeviceData() { // get details for adding
 		state.currentError = ep?.message
     	log.error "Get pannel data catch ${state.currentError}"
         errorhand("Get pannel data catch")
+        eventlist << sendEvent(name: "getdevicedata pannel", value: "catch error")
     }
-    log.info "get device data current devices ${currentDevices.name}"
+    log.info "get device data current devices" // ${currentDevices.name}"
     return currentDevices
 }
 
@@ -351,8 +367,8 @@ def ArmDisRef(mode){
             if (state.errorCount != 0) {
 				state.errorCount = 0
 			}
-            if (state.currentError != null) {
-				state.currentError = null
+            if (state.currentError != "none") {
+				state.currentError = "none"
             }
             log.info "Mode $mode - '$respstatus' - '$respmsg'" // $respdata" 
             
@@ -373,6 +389,8 @@ def ArmDisRef(mode){
     	log.error "Error arm/dis/Ref: ${e}, ${e?.message}"
         state.currentError = e?.message
         errorhand("Error Arm/Dis/Ref Catch")
+        respdata = 'error'
+        
     }
     return respdata
 }
@@ -398,12 +416,14 @@ def initialize() {
 	unsubscribe()
 	unschedule()
 	runEvery5Minutes(checkError)
-    runEvery10Minutes(getDeviceData)
+    runEvery3Hours(getDeviceData)
+    //runEvery10Minutes(getDeviceData)
   //schedule(Date dateTime, String handlerMethod, Map options = null)
   //schedule(String expression, String handlerMethod, Map options = null)
     def toktime = now() + 604800000
-    if (logEnable) log.debug "$toktime"
-    schedule("15 0 3 ? * 1 *", getToken) // once a week
+    log.debug "$toktime"
+    schedule("15 1 0 ? * 2/2 *", getToken) // every 2 days
+     //schedule("15 0 3 ? * 1 *", getToken) // once a week
     //schedule(now() + 604800000, getToken) // once a week
 	//if (selectedDevices) {
 	if (selectedDevices) {
@@ -413,7 +433,7 @@ def initialize() {
 //	----- PERIODIC CLOUD MX TASKS -----
 def checkError() {
 	if (state.currentError == null || state.currentError == "none") {
-		log.info "Connect did not have any set errors - ${state?.currentError}"
+		log.info "YaleApp - Connect did not have any set errors - ${state?.currentError}"
 		return
 	}
 	def errMsg = state.currentError
@@ -429,7 +449,7 @@ def checkError() {
 		//}
 		log.error "${errMsg} error while attempting getDevices.  Will attempt getToken"
 		getToken()
-		if (state.currentError == null) {
+		if (state.currentError == null || state.currentError == "none") {
 			log.info "getToken successful.  Token has been updated."
 			getDevices()
 			return
