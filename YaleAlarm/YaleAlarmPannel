@@ -14,9 +14,9 @@ metadata {
 	definition (name: "Yale Alarm pannel", namespace: "smartthings", author: "Tapion1ives/Mark-C-uk/foyst", ocfDeviceType: "x.com.st.d.siren", vid: "generic-siren-2") { 
     
 		capability "Alarm"
-		//capability "Lock"
+		capability "Lock"
         capability "Refresh"
-		//capability "Switch"
+		capability "Switch"
 		capability "Polling"
 		
         command "datain"
@@ -25,6 +25,10 @@ metadata {
         attribute "supportedModes", "string"
         attribute "modes", "string"
 	}
+    
+    preferences {
+        input "logEnable", "bool", defaultValue: false, title: "Enable Debug Logging", description: "Enable extra logging"
+    }
     
 	tiles {
 		standardTile("modes", "device.modes", inactiveLabel: false, width: 2, height: 2) {
@@ -64,29 +68,30 @@ def updated() {
 	
 	state.supportedModes = supportedModes
     log.info "Supportedmodes - $supportedModes"
-	sendEvent(name: "supportedModes", value: supportedModes, displayed: false)
+	return sendEvent(name: "supportedModes", value: supportedModes, displayed: false)
 	unschedule()
 }
 def installed() {
-	log.debug "installed"
+	log.info "installed"
 }
 
 def poll() {
-	log.debug "poll"
+	log.info "poll"
 	refresh()
 }
 
 def refresh() {
-	log.debug "Refresh"
+	log.info "Refresh"
     try {
     parent.getDeviceData()
     }
     catch (e){
     log.warn "refresh error $e"
     }
+    
 }
 def datain(data) {
-	//log.debug "Datain $data"
+	if (logEnable) log.debug "Datain $data"
     //log.debug "Datain ${data?.message} ,  ${data?.data}" //${data?.data[0].mode},
     	def dmsg = data?.message
     	def resp = data?.data[0]?.mode
@@ -127,21 +132,33 @@ def datain(data) {
         }
         log.info "Data pushed in, state is ${state.modes}, error are '${state.errorCount}'" //${data?.message}
 		sendEvent(name: "modes", value: state.modes, displayed: true, descriptionText: "Refresh - response '$dmsg'") //isStateChange: false,
-		//sendEvent(name: "lock", value: state.lock, displayed: false) //isStateChange: false,
-		//sendEvent(name: "switch", value: state.switch, displayed: false) //isStateChange: false,
+		sendEvent(name: "lock", value: state.lock, displayed: false) //isStateChange: false,
+		sendEvent(name: "switch", value: state.switch, displayed: false) //isStateChange: false,
         sendEvent(name: "alarm", value: state.alarm, displayed: false,, descriptionText: "Refresh - response '$dmsg'") //isStateChange: false,
 }
 
 // ==================== Buttons / voice comands ==========================
-def lock() { armStay() }
-def siren() {armStay() }
-def strobe() {armStay() }
-
-def on() {	armAway() }
-def both() {armAway() }
-
-def off() {	disarm()}
-def unlock() { disarm() }
+def lock() {
+    return armStay()
+}
+def siren() {
+    return armStay()
+}
+def strobe() {
+    return armStay()
+}
+def on() {	
+    return armAway() 
+}
+def both() {
+    return armAway()
+}
+def off() {	
+    return disarm()
+}
+def unlock() { 
+    return disarm()
+}
 // ===================   Buttons / voice comands end == in to Modes ====================
 
 def armAway(mode) {
@@ -160,20 +177,21 @@ def disarm(mode) {
 	postcmd(mode)
 }
 def modes (mode) {
-	log.debug "direct modes command $mode"
+	if (logEnable) log.debug "direct modes command $mode"
 	if (mode == "active") { log.warn "not handled $mode"}
 	if (mode == "armedAway") {armAway()}
 	if (mode == "armedStay") {armStay()}
 	if (mode == "disarm") {disarm()}
 }
 def setAlertState(Astate){
-log.debug " Aleart state is $Astate"
+    if (logEnable) log.debug " Aleart state is $Astate"
 }
 // ===================   Modes end    ==  in to post CMDs ====================
 def postcmd(mode){
+    def eventlist = []
 	log.trace "postcmd outgoing Mode CMD $mode "
     def data = parent.ArmDisRef(mode)
-    log.debug "POSTCMD $data"
+    if (logEnable) log.debug "POSTCMD $data"
     def dmsg = ''
     if (data != "error"){
     	dmsg = data?.message
@@ -206,15 +224,18 @@ def postcmd(mode){
     	state.errorCount = state.errorCount +1
     	state.modes = "disabled"
         state.alarm = "disabled"
+        state.lock = "error"
+        state.switch = "error"
     }
     log.info "Mode Change state is ${state.modes}, $dmsg, errors are ${state.errorCount}"
-	sendEvent(name: "modes", value: state.modes, displayed: true, descriptionText: "Mode Change to ${state.modes} - $dmsg") //isStateChange: false,
-    //sendEvent(name: "lock", value: state.lock, displayed: false) //isStateChange: false,
-	//sendEvent(name: "switch", value: state.switch, displayed: false) //isStateChange: false,
-    sendEvent(name: "alarm", value: state.alarm, displayed: false, descriptionText: "Mode Change to ${state.modes} - $dmsg") //isStateChange: false,
+	eventlist << sendEvent(name: "modes", value: state.modes, displayed: true, descriptionText: "Mode Change to ${state.modes} - $dmsg") //isStateChange: false,
+    eventlist << sendEvent(name: "lock", value: state.lock, displayed: false) //isStateChange: false,
+	eventlist << sendEvent(name: "switch", value: state.switch, displayed: false) //isStateChange: false,
+    eventlist << sendEvent(name: "alarm", value: state.alarm, displayed: false, descriptionText: "Mode Change to ${state.modes} - $dmsg") //isStateChange: false,
+    return eventlist
 }
 
 // parse events into attributes
 def parse(String description) {
-	log.debug "Parsing '${description}'"
+	log.warn "Parsing '${description}'"
 }
