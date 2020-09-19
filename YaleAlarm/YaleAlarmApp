@@ -421,10 +421,14 @@ def initialize() {
   //schedule(Date dateTime, String handlerMethod, Map options = null)
   //schedule(String expression, String handlerMethod, Map options = null)
     def toktime = now() + 604800000
-    log.debug "$toktime"
-    schedule("15 1 0 ? * 2/2 *", getToken) // every 2 days
-     //schedule("15 0 3 ? * 1 *", getToken) // once a week
-    //schedule(now() + 604800000, getToken) // once a week
+    
+    
+    randomSixty = Math.abs(new Random().nextInt() % 60)
+	randomTwentyFour = Math.abs(new Random().nextInt() % 24)
+    schedule("${randomSixty} ${randomSixty} ${randomTwentyFour} ? * 2/2 *", getToken)
+    
+    //schedule("15 1 0 ? * 2/2 *", getToken) // every 2 days
+    log.debug "toke = $toktime , ransixity ${randomSixty}, ran24 ${randomTwentyFour}"
 	//if (selectedDevices) {
 	if (selectedDevices) {
 		addDevices()
@@ -433,7 +437,7 @@ def initialize() {
 //	----- PERIODIC CLOUD MX TASKS -----
 def checkError() {
 	if (state.currentError == null || state.currentError == "none") {
-		log.info "YaleApp - Connect did not have any set errors - ${state?.currentError}"
+		log.info "YaleApp - Connect did not have any issues - ${state?.currentError}"
 		return
 	}
 	def errMsg = state.currentError
