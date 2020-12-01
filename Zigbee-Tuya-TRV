@@ -1,0 +1,421 @@
+/**
+ *  Date: 2020-12-01
+ */
+
+import hubitat.helper.HexUtils
+
+metadata {
+	definition (name: "Zigbee - Tuya TRV", namespace: "Mark-C-uk", author: "MarkC") {
+        capability "Configuration"
+        capability "TemperatureMeasurement"
+        capability "Thermostat"
+        capability "ThermostatHeatingSetpoint"
+        capability "ThermostatCoolingSetpoint"
+        capability "ThermostatSetpoint"
+        capability "Refresh"
+        
+        
+///to do		fingerprint profileId: "0104", endpointId: "19", inClusters: " 0000,0003,0201,0204", outClusters: "0402"
+    }
+    
+    preferences {
+        //input("lock", "enum", title: "Do you want to lock your thermostat's physical keypad?", options: ["No", "Yes"], defaultValue: "No", required: false, displayDuringSetup: false)
+        input name: "infoLogging", type: "bool", title: "Enable info logging", defaultValue: true
+    }
+}
+    
+
+ArrayList<String> parse(String description) {
+    //log.debug "parse $description"
+    ArrayList<String> cmd = []
+    Map msgMap = null
+    if(description.indexOf('encoding: 4C') >= 0) {
+        msgMap = zigbee.parseDescriptionAsMap(description.replace('encoding: 4C', 'encoding: F2'))
+        msgMap = unpackStructInMap(msgMap)
+        log.warn "parse 1 encoding: 4C >= 0"
+    } 
+    else if(description.indexOf('attrId: FF01, encoding: 42') >= 0) {
+        msgMap = zigbee.parseDescriptionAsMap(description.replace('encoding: 42', 'encoding: F2'))
+        msgMap["encoding"] = "41"
+        msgMap["value"] = parseXiaomiStruct(msgMap["value"], isFCC0=false, hasLength=true)
+        log.warn "parse 2 attrId: FF01 encoding: 4C >= 0"
+    } 
+    else {
+        if(description.indexOf('encoding: 42') >= 0) {
+            List values = description.split("value: ")[1].split("(?<=\\G..)")
+            String fullValue = values.join()
+            Integer zeroIndex = values.indexOf("01")
+                if(zeroIndex > -1) {
+                    msgMap = zigbee.parseDescriptionAsMap(description.replace(fullValue, values.take(zeroIndex).join()))
+                    values = values.drop(zeroIndex + 3)
+                    msgMap["additionalAttrs"] = [
+                    ["encoding": "41",
+                    "value": parseXiaomiStruct(values.join(), isFCC0=false, hasLength=true)]
+                    ]
+                    log.debug "warn 3-1-1"
+                } 
+                else {
+                    msgMap = zigbee.parseDescriptionAsMap(description)
+                    log.warn "parse 3b"
+                }
+        log.warn "parse 3-1-2 encoding: 4C >= 0"
+        } 
+        else {
+            msgMap = zigbee.parseDescriptionAsMap(description)
+               // this is used log.debug "parse 3-2"
+        }
+    
+        if(msgMap.containsKey("encoding") && msgMap.containsKey("value") && msgMap["encoding"] != "41" && msgMap["encoding"] != "42") {
+            msgMap["valueParsed"] = zigbee_generic_decodeZigbeeData(msgMap["value"], msgMap["encoding"])
+        }
+        
+        if(msgMap == [:] && description.indexOf("zone") == 0) {
+            msgMap["type"] = "zone"
+            java.util.regex.Matcher zoneMatcher = description =~ /.*zone.*status.*0x(?<status>([0-9a-fA-F][0-9a-fA-F])+).*extended.*status.*0x(?<statusExtended>([0-9a-fA-F][0-9a-fA-F])+).*/
+            if(zoneMatcher.matches()) {
+                  msgMap["parsed"] = true
+                  msgMap["status"] = zoneMatcher.group("status")
+                  msgMap["statusInt"] = Integer.parseInt(msgMap["status"], 16)
+                  msgMap["statusExtended"] = zoneMatcher.group("statusExtended")
+                  msgMap["statusExtendedInt"] = Integer.parseInt(msgMap["statusExtended"], 16)
+            } 
+            else {
+               msgMap["parsed"] = false
+            }
+        }
+    }
+
+    switch(msgMap["cluster"] + '_' + msgMap["attrId"]) {
+        case "0000_0001":
+            log.trace("Application ID Received")
+            updateApplicationId(msgMap['value'])
+            break
+        case "0000_0004":
+            log.trace("Manufacturer Name Received")
+            updateManufacturer(msgMap['value'])
+            break
+        case "0000_0005":
+            log.trace("Model Name Received")
+            setCleanModelName(newModelToSet=msgMap["value"])
+            break
+        default:
+            switch(msgMap["clusterId"]) {
+                case "0013":
+                    logging("MULTISTATE CLUSTER EVENT")
+                    break
+                case "8021":
+                    logging("BIND RESPONSE CLUSTER EVENT")
+                    break
+                case "8001":
+                    logging("GENERAL CLUSTER EVENT")
+                    break
+                case "8004":
+                    log.trace("Simple Descriptor Information Received - description:${description} | parseMap:${msgMap}")
+                    updateDataFromSimpleDescriptorData(msgMap["data"])
+                    break
+                case "8031":
+                    logging("Link Quality Cluster Event - description:${description} | parseMap:${msgMap}")
+
+                    break
+                case "8032":
+                    logging("Routing Table Cluster Event - description:${description} | parseMap:${msgMap}")
+                    break
+                case "8021":
+                case "8038":
+                    logging("GENERAL CATCHALL (0x${msgMap["clusterId"]}")
+                    break
+                //////////////////////////////////////////////////////////////////////////////MC
+                case "EF00":  
+                    List data = msgMap['data']
+                    if (data[2] && data[3]){
+                        String commandType = data[2] + data[3]
+                        switch(commandType){
+                            case "0202":
+                                String SetPoint = HexUtils.hexStringToInt(data[9]) / 10
+                                logging("tuya Temp Set Point ${commandType}, data9 ${SetPoint}")
+                                sendEvent(name: "heatingSetpoint", value: SetPoint, unit: "C")
+	                            sendEvent(name: "thermostatSetpoint", value: SetPoint, unit: "C")
+                                break
+                            
+                            case '0302':       
+                                String temperature = HexUtils.hexStringToInt(data[9])/ 10
+                                logging("Temp tuya, ${temperature}, data ${msgMap["data"]}")
+                                sendEvent(name: "temperature", value: temperature, unit: "C" )
+                                break
+                            case '0404':
+                                String mode = HexUtils.hexStringToInt(data[6])
+                                logging("tuya mode ${commandType}, data6 = ${mode}")
+                                switch (mode){
+                                    case '0':
+                                    sendEvent(name: "thermostatMode", value: "off" )
+                                    break
+                                    case '1':
+                                    sendEvent(name: "thermostatMode", value: "auto" , descriptionText:"internal programming of device")
+                                    break
+                                    case '2':
+                                    sendEvent(name: "thermostatMode", value: "heat" )
+                                    break
+                                }
+                                break
+                            case '0215':
+                                String values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                log.debug "tuya battery ${values}"
+                                //sendEvent(name: "battery", value: TBC, unit:"%" )
+                            break
+                            default:
+                                String values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                logging("other tuya cluster EF00 - ${commandType} - ${values} ")
+                                break
+                        }
+                    }
+                    else { log.debug "other cluster EF00 but map null- ${msgMap}" }
+                        //logging("other cluster EF00 but map null- ${msgMap}", 100)}
+                    break
+                
+                /////////////////////////////////////////////////////////////////////////////////////////mc
+                default:
+                    logging("Unhandled Event IGNORE THIS - description:${description} | msgMap:${msgMap}")
+                    break
+            }
+            break
+    }
+    msgMap = null
+    return cmd
+}
+
+
+def logsOff(){
+    log.warn "debug logging disabled..."
+    device.updateSetting("logEnable",[value:"false",type:"bool"])
+}
+// from markus toolbox driver
+Map unpackStructInMap(Map msgMap, String originalEncoding="4C") {
+     
+    msgMap['encoding'] = originalEncoding
+    List<String> values = msgMap['value'].split("(?<=\\G..)")
+    logging("unpackStructInMap() values=$values", 1)
+    Integer numElements = Integer.parseInt(values.take(2).reverse().join(), 16)
+    values = values.drop(2)
+    List r = []
+    Integer cType = null
+    List ret = null
+    while(values != []) {
+        cType = Integer.parseInt(values.take(1)[0], 16)
+        values = values.drop(1)
+        ret = zigbee_generic_convertStructValueToList(values, cType)
+        r += ret[0]
+        values = ret[1]
+    }
+    if(r.size() != numElements) throw new Exception("The STRUCT specifies $numElements elements, found ${r.size()}!")
+     
+    msgMap['value'] = r
+    return msgMap
+}
+
+// BEGIN:getLoggingFunction()
+private boolean logging(message) {
+    boolean didLogging = false
+     
+    Integer logLevelLocal = 0
+    if (infoLogging == null || infoLogging == true) {
+        log.info "$message"
+        didLogging = true
+    }
+    return didLogging
+}
+// END:  getLoggingFunction()
+
+//end markus toobox ////////////////////
+
+
+
+
+////////////////////////////////////////////////////////////////////////////
+
+def refresh() {
+    logDebug "refresh"
+//need to understand commands
+/*    def cmds = []
+    
+    cmds += zigbee.readAttribute(0x201, 0x0000) //Read Local Temperature
+    cmds += zigbee.readAttribute(0x201, 0x0008) //Read PI Heating State  
+    cmds += zigbee.readAttribute(0x201, 0x0012) //Read Heat Setpoint
+    cmds += zigbee.readAttribute(0x201, 0x001C) //Read System Mode
+    cmds += zigbee.readAttribute(0x201, 0x401C, [mfgCode: "0x1185"]) //Read System Mode
+    
+    cmds += zigbee.readAttribute(0x204, 0x0000) //Read Temperature Display Mode
+    cmds += zigbee.readAttribute(0x204, 0x0001) //Read Keypad Lockout
+    
+    return cmds
+*/
+}    
+
+
+
+def configure(){    
+    log.warn "configure..."
+    runIn(1800,logsOff)    
+	//binding to Thermostat cluster"
+    
+    // Set unused default values (for Google Home Integration)
+    sendEvent(name: "coolingSetpoint", value:getTemperature("0BB8")) // 0x0BB8 =  30 Celsius
+    sendEvent(name: "thermostatFanMode", value:"auto")
+    updateDataValue("lastRunningMode", "heat") // heat is the only compatible mode for this device
+    
+    def cmds = [
+    //bindings
+        "zdo bind 0x${device.deviceNetworkId} 1 0x019 0x201 {${device.zigbeeId}} {}", "delay 200"
+        ]
+    
+    //reporting
+    cmds += zigbee.configureReporting(0x201, 0x0000, 0x29, 10, 60, 50)   //Attribute ID 0x0000 = local temperature, Data Type: S16BIT
+    cmds += zigbee.configureReporting(0x201, 0x0008, 0x20, 10, 900, 5)   //Attribute ID 0x0008 = pi heating demand, Data Type: U8BIT
+    cmds += zigbee.configureReporting(0x201, 0x0012, 0x29, 1, 0, 50)     //Attribute ID 0x0012 = occupied heat setpoint, Data Type: S16BIT
+    cmds += zigbee.configureReporting(0x201, 0x001C, 0x30, 1, 0, 1)      //Attribute ID 0x001C = system mode, Data Type: 8 bits enum
+    cmds += zigbee.configureReporting(0x201, 0x401C, 0x30, 1, 0, 1, [mfgCode: "0x1185"])   	   //Attribute ID 0x401C = manufacturer specific setpoint mode, Data Type: 8 bits enum
+    
+    cmds += zigbee.configureReporting(0x204, 0x0000, 0x30, 1, 0)   	  //Attribute ID 0x0000 = temperature display mode, Data Type: 8 bits enum
+    cmds += zigbee.configureReporting(0x204, 0x0001, 0x30, 1, 0)   	  //Attribute ID 0x0001 = keypad lockout, Data Type: 8 bits enum
+    
+    return cmds + refresh()
+}
+
+def getModeMap() { [
+	"00":"off",
+    "04":"heat",
+	"05":"eco"
+]}
+
+def getTemperature(value) {
+	if (value != null) {
+    	
+		def celsius = Integer.parseInt(value, 16) / 100
+		if (getTemperatureScale() == "C") {
+			return celsius
+		}
+        else {
+			return Math.round(celsiusToFahrenheit(celsius))
+		}
+	}
+}
+
+
+///////////// commands ///////////////
+
+// clusterId = EF00
+
+// off = 0
+// manual/hubitat = 2
+// auto/trv schedual = 1
+
+//send in hex?
+
+    //cluster_frame = '11'
+    //cmd = '00' # Command
+    //action = '0404' # Mode
+    //data = '%02x' %( mode // 10 )
+    //tuya_cmd( self, nwkid, EPout, cluster_frame, sqn, cmd, action, data)   
+
+
+def off() {
+    //zigbee.writeAttribute(0x201, 0x001C, 0x30, 0)
+}
+
+def heat() { //manual and hubitat control
+    updateDataValue("lastRunningMode", "heat")
+    //def cmds = []
+    //cmds += zigbee.writeAttribute(0x201, 0x001C, 0x30, 04, [:], 1000) // MODE
+    //cmds += zigbee.writeAttribute(0x201, 0x401C, 0x30, 04, [mfgCode: "0x1185"]) // SETPOINT MODE    
+    //return cmds
+}
+
+def eco() { //holiday
+    updateDataValue("lastRunningMode", "cool")
+   // def cmds = []
+   // cmds += zigbee.writeAttribute(0x201, 0x001C, 0x30, 04, [:], 1000) // MODE
+   // cmds += zigbee.writeAttribute(0x201, 0x401C, 0x30, 05, [mfgCode: "0x1185"]) // SETPOINT MODE    
+   // return cmds
+}
+
+def cool() {
+    log.info "cool mode is not available for this device. => Defaulting to eco mode instead."
+    eco()
+}
+
+def auto() {
+    // auto/trv schedual = 1
+    updateDataValue("lastRunningMode", "heat")
+}
+
+def emergencyHeat() {
+    log.info "emergencyHeat mode is not available for this device. => Defaulting to heat mode instead."
+	heat()
+}
+
+def fanAuto() {
+    log.info "fanAuto mode is not available for this device"
+}
+
+def fanCirculate(){
+    log.info "fanCirculate mode is not available for this device"
+}
+
+def fanOn(){
+    log.info "fanOn mode is not available for this device"
+}
+
+def setSchedule(JSON_OBJECT){
+    log.info "setSchedule is not available for this device"
+}
+
+def setThermostatFanMode(fanmode){
+    log.info "setThermostatFanMode is not available for this device"
+}
+
+def setHeatingSetpoint(preciseDegrees) {
+    //cluster_frame = '11'
+    //cmd = '00' # Command
+    //action = '0202'
+    //data = '%08x' %setpoint_value
+    //tuya_cmd( self, nwkid, EPout, cluster_frame, sqn, cmd, action, data)
+	if (preciseDegrees != null) {
+    //    zigbee.writeAttribute(0x201, 0x0012, 0x29, celsius100) //Write Heat Setpoint      
+	}
+}
+
+def setCoolingSetpoint(degrees) {
+    log.info "setCoolingSetpoint is not available for this device"
+}
+
+def setThermostatMode(String value) {
+/*
+// clusterId = EF00?
+// off = 0
+// manual/hubitat = 2
+// auto/trv schedual = 1
+*/
+    switch (value) {
+        case "heat":
+        case "emergency heat":
+            return heat()
+        
+        case "eco":
+        case "cool":
+            return eco()
+        
+        case "auto":
+            return auto()
+        
+        default:
+            return off()
+    }
+}
+
+def updated() {
+log.info "${device.displayName} updated..."
+}
+def installed() {
+    sendEvent(name: "supportedThermostatFanModes", value: [""])
+    sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
+    
+}
