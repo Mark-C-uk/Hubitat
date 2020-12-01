@@ -14,6 +14,8 @@ metadata {
         capability "ThermostatSetpoint"
         capability "Refresh"
         
+        attribute "valve", "String"
+        
         
 ///to do		fingerprint profileId: "0104", endpointId: "19", inClusters: " 0000,0003,0201,0204", outClusters: "0402"
     }
@@ -136,7 +138,6 @@ ArrayList<String> parse(String description) {
                                 sendEvent(name: "heatingSetpoint", value: SetPoint, unit: "C")
 	                            sendEvent(name: "thermostatSetpoint", value: SetPoint, unit: "C")
                                 break
-                            
                             case '0302':       
                                 String temperature = HexUtils.hexStringToInt(data[9])/ 10
                                 logging("Temp tuya, ${temperature}, data ${msgMap["data"]}")
@@ -162,9 +163,14 @@ ArrayList<String> parse(String description) {
                                 log.debug "tuya battery ${values}"
                                 //sendEvent(name: "battery", value: TBC, unit:"%" )
                             break
+                            case '6D02':
+                                String valve = HexUtils.hexStringToInt(data[9])
+                                logging("tuya valve position ${valve}")
+                                sendEvent(name: "valve", value: valve, unit: "%", descriptionText: "Valve open ${valve}%")
+                            break
                             default:
                                 String values = data.collect{c -> HexUtils.hexStringToInt(c)}
-                                logging("other tuya cluster EF00 - ${commandType} - ${values} ")
+                                log.debug "other tuya cluster EF00 - ${commandType} - ${values} "
                                 break
                         }
                     }
@@ -174,7 +180,7 @@ ArrayList<String> parse(String description) {
                 
                 /////////////////////////////////////////////////////////////////////////////////////////mc
                 default:
-                    logging("Unhandled Event IGNORE THIS - description:${description} | msgMap:${msgMap}")
+                    log.debug "Unhandled Event IGNORE THIS - description:${description} | msgMap:${msgMap}"
                     break
             }
             break
@@ -233,7 +239,7 @@ private boolean logging(message) {
 ////////////////////////////////////////////////////////////////////////////
 
 def refresh() {
-    logDebug "refresh"
+    log.debug "refresh"
 //need to understand commands
 /*    def cmds = []
     
@@ -261,7 +267,7 @@ def configure(){
     sendEvent(name: "coolingSetpoint", value:getTemperature("0BB8")) // 0x0BB8 =  30 Celsius
     sendEvent(name: "thermostatFanMode", value:"auto")
     updateDataValue("lastRunningMode", "heat") // heat is the only compatible mode for this device
-    
+/*    
     def cmds = [
     //bindings
         "zdo bind 0x${device.deviceNetworkId} 1 0x019 0x201 {${device.zigbeeId}} {}", "delay 200"
@@ -278,6 +284,7 @@ def configure(){
     cmds += zigbee.configureReporting(0x204, 0x0001, 0x30, 1, 0)   	  //Attribute ID 0x0001 = keypad lockout, Data Type: 8 bits enum
     
     return cmds + refresh()
+*/
 }
 
 def getModeMap() { [
@@ -412,10 +419,14 @@ def setThermostatMode(String value) {
 }
 
 def updated() {
-log.info "${device.displayName} updated..."
+    sendEvent(name: "supportedThermostatFanModes", value: [""])
+    sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
+    sendEvent(name: "thermostatFanMode", value: "auto")
+    log.info "${device.displayName} updated..."
 }
 def installed() {
     sendEvent(name: "supportedThermostatFanModes", value: [""])
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
+    sendEvent(name: "thermostatFanMode", value: "auto")
     
 }
