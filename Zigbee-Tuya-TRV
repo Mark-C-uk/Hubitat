@@ -54,17 +54,19 @@ ArrayList<String> parse(String description) {
                     ["encoding": "41",
                     "value": parseXiaomiStruct(values.join(), isFCC0=false, hasLength=true)]
                     ]
-                    log.debug "warn 3-1-1"
+                    log.warn "warn 3-1-1"
                 } 
                 else {
                     msgMap = zigbee.parseDescriptionAsMap(description)
-                    log.warn "parse 3b"
+                    log.warn "used for refresh parse 3b"
                 }
-        log.warn "parse 3-1-2 encoding: 4C >= 0"
+        log.warn "used for refresh - parse 3-1-2 encoding: 4C >= 0"
         } 
         else {
+            ///used
             msgMap = zigbee.parseDescriptionAsMap(description)
-               // this is used log.debug "parse 3-2"
+               //log.warn "used for refresh - else parse 3-1-3 encoding: 4C >= 0"
+            //used
         }
     
         if(msgMap.containsKey("encoding") && msgMap.containsKey("value") && msgMap["encoding"] != "41" && msgMap["encoding"] != "42") {
@@ -90,15 +92,21 @@ ArrayList<String> parse(String description) {
     switch(msgMap["cluster"] + '_' + msgMap["attrId"]) {
         case "0000_0001":
             log.trace("Application ID Received")
-            updateApplicationId(msgMap['value'])
+            if(msgMap['value']) {
+                updateDataValue("application", msgMap['value'])
+            }
             break
         case "0000_0004":
-            log.trace("Manufacturer Name Received")
-            updateManufacturer(msgMap['value'])
+        log.trace("Manufacturer Name Received ${msgMap['value']}")
+            if(msgMap['value']) {
+                updateDataValue("manufacturer", msgMap['value'])
+            }
             break
         case "0000_0005":
             log.trace("Model Name Received")
-            setCleanModelName(newModelToSet=msgMap["value"])
+            if(msgMap['value']) {
+                updateDataValue('model', msgMap['value'])
+            }    
             break
         default:
             switch(msgMap["clusterId"]) {
@@ -137,24 +145,32 @@ ArrayList<String> parse(String description) {
                                 logging("tuya Temp Set Point ${commandType}, data9 ${SetPoint}")
                                 sendEvent(name: "heatingSetpoint", value: SetPoint, unit: "C")
 	                            sendEvent(name: "thermostatSetpoint", value: SetPoint, unit: "C")
+                                if (device.currentValue("thermostatMode") != "off" && SetPoint.toFloat() > device.currentValue("temperature").toFloat()) { 
+                                    sendEvent(name: "thermostatOperatingState", value: "heating")}
+                                else { sendEvent(name: "thermostatOperatingState", value: "idle")}
                                 break
+                            
                             case '0302':       
                                 String temperature = HexUtils.hexStringToInt(data[9])/ 10
                                 logging("Temp tuya, ${temperature}, data ${msgMap["data"]}")
                                 sendEvent(name: "temperature", value: temperature, unit: "C" )
+                                if (device.currentValue("thermostatMode") != "off" && temperature.toFloat() < device.currentValue("thermostatSetpoint").toFloat()) {
+                                    sendEvent(name: "thermostatOperatingState", value: "heating")}
+                                else { sendEvent(name: "thermostatOperatingState", value: "idle")}
                                 break
+                            
                             case '0404':
                                 String mode = HexUtils.hexStringToInt(data[6])
-                                logging("tuya mode ${commandType}, data6 = ${mode}")
+                            logging("tuya mode ${commandType}, raw=${msgMap} data=${data} ,dec=${mode}")
                                 switch (mode){
                                     case '0':
-                                    sendEvent(name: "thermostatMode", value: "off" )
+                                        sendEvent(name: "thermostatMode", value: "off" )
                                     break
                                     case '1':
-                                    sendEvent(name: "thermostatMode", value: "auto" , descriptionText:"internal programming of device")
+                                        sendEvent(name: "thermostatMode", value: "auto" , descriptionText:"internal programming of device")
                                     break
                                     case '2':
-                                    sendEvent(name: "thermostatMode", value: "heat" )
+                                        sendEvent(name: "thermostatMode", value: "heat" )
                                     break
                                 }
                                 break
@@ -174,13 +190,15 @@ ArrayList<String> parse(String description) {
                                 break
                         }
                     }
-                    else { log.debug "other cluster EF00 but map null- ${msgMap}" }
-                        //logging("other cluster EF00 but map null- ${msgMap}", 100)}
+                    else { 
+                        // found data in map of, data:[02, 19]], data:[00, 00]]
+                        //logging("other cluster EF00 but map null- ${msgMap}", 100)
+                    }
                     break
                 
                 /////////////////////////////////////////////////////////////////////////////////////////mc
                 default:
-                    log.debug "Unhandled Event IGNORE THIS - description:${description} | msgMap:${msgMap}"
+                    //log.debug "Unhandled Event IGNORE THIS - description:${description} | msgMap:${msgMap}"
                     break
             }
             break
@@ -240,6 +258,11 @@ private boolean logging(message) {
 
 def refresh() {
     log.debug "refresh"
+    ArrayList<String> cmd = []
+    cmd += zigbee.readAttribute(0x000, 0x0004)
+    cmd += zigbee.readAttribute(0x000, 0x0005)
+    
+    sendZigbeeCommands(cmd)
 //need to understand commands
 /*    def cmds = []
     
@@ -322,10 +345,31 @@ def getTemperature(value) {
     //action = '0404' # Mode
     //data = '%02x' %( mode // 10 )
     //tuya_cmd( self, nwkid, EPout, cluster_frame, sqn, cmd, action, data)   
+void sendZigbeeCommands(List<String> cmds) {
 
+	// All hub commands go through here for immediate transmission and to avoid some method() weirdness.
+
+    //logging("${device} : sendZigbeeCommands received : ${cmds}", "trace")
+    log.debug "$cmds"
+    sendHubCommand(new hubitat.device.HubMultiAction(cmds, hubitat.device.Protocol.ZIGBEE))
+
+}
 
 def off() {
-    //zigbee.writeAttribute(0x201, 0x001C, 0x30, 0)
+    //sendTuyaCommand(0x00, "6801000100")
+    Random rnd = new Random()
+    String payload = 0404000100
+    String fullPayload = "00${HexUtils.integerToHexString(rnd.nextInt(255),1)}" + payload
+    //sendZigbeeCommands(zigbeeCommand(0x01, 0xEF00, 0x00, 101, fullPayload))
+      //sendZigbeeCommands(zigbeeCommand(0x01, 0xEF00, 0x00, fullPayload))
+ // sendZigbeeCommands(["he raw ${device.deviceNetworkId} 0 0 0x0031 {00 ${zigbee.swapOctets(device.deviceNetworkId)} 0} {0x0000}"])
+    sendZigbeeCommands(["he raw ${device.deviceNetworkId} 0 0 0x0031 {00 ${zigbee.swapOctets(device.deviceNetworkId)} 0} {0x0000}"])
+    //sendZigbeeCommands(zigbee.off())
+    //(java.lang.Integer, java.lang.Integer, java.lang.Integer, java.lang.Integer) values: [1, 61184, 0, 68157605]
+    //[he cmd 0x3E03 0x01 6 0 {}, delay 2000]
+    //0104 0006 01 01 0040 00 3E03 00 00 0000 0B 01 00C3
+    //zigbee.writeAttribute(0x01, 0xEF00, 0x00, 101, , 0404000100) // MODE
+    
 }
 
 def heat() { //manual and hubitat control
@@ -429,4 +473,17 @@ def installed() {
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
     sendEvent(name: "thermostatFanMode", value: "auto")
     
+}
+void updateDataFromSimpleDescriptorData(List<String> data) {
+    Map<String,String> sdi = parseSimpleDescriptorData(data)
+    if(sdi != [:]) {
+        updateDataValue("endpointId", sdi['endpointId'])
+        updateDataValue("profileId", sdi['profileId'])
+        updateDataValue("inClusters", sdi['inClusters'])
+        updateDataValue("outClusters", sdi['outClusters'])
+        getInfo(true, sdi)
+    } else {
+        log.warn("No VALID Simple Descriptor Data received!")
+    }
+    sdi = null
 }
