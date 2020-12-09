@@ -136,6 +136,7 @@ ArrayList<String> parse(String description) {
                     break
                 //////////////////////////////////////////////////////////////////////////////MC
                 case "EF00":  
+                    log.debug "clutsInt= ${msgMap[clusterInt]} ,att ID ${msgMap["attrId"]}, cluster ${msgMap["clusterId"]} -- ${msgMap}"
                     List data = msgMap['data']
                     if (data[2] && data[3]){
                         String commandType = data[2] + data[3]
@@ -178,6 +179,8 @@ ArrayList<String> parse(String description) {
                                 String values = data.collect{c -> HexUtils.hexStringToInt(c)}
                                 log.debug "tuya battery ${values}"
                                 //sendEvent(name: "battery", value: TBC, unit:"%" )
+                                // 6702 - [68, 13, 103, 2, 0, 4, 0, 0, 0, 35] ?3.5 volt?
+                            
                             break
                             case '6D02':
                                 String valve = HexUtils.hexStringToInt(data[9])
@@ -261,22 +264,26 @@ def refresh() {
     ArrayList<String> cmd = []
     cmd += zigbee.readAttribute(0x000, 0x0004)
     cmd += zigbee.readAttribute(0x000, 0x0005)
+  //he raw 0x3E03 1 0x01 0x0000 {10 00 00 04 00}, delay 2000, he raw 0x3E03 1 0x01 0x0000 {10 00 00 05 00}, delay 2000]
     
-    sendZigbeeCommands(cmd)
+    //cmd += zigbee.readAttribute(0x000, EF00)
+    
+    //sendZigbeeCommands(cmd)
 //need to understand commands
 /*    def cmds = []
     
-    cmds += zigbee.readAttribute(0x201, 0x0000) //Read Local Temperature
-    cmds += zigbee.readAttribute(0x201, 0x0008) //Read PI Heating State  
-    cmds += zigbee.readAttribute(0x201, 0x0012) //Read Heat Setpoint
-    cmds += zigbee.readAttribute(0x201, 0x001C) //Read System Mode
-    cmds += zigbee.readAttribute(0x201, 0x401C, [mfgCode: "0x1185"]) //Read System Mode
+    cmd += zigbee.readAttribute(0x201, 0x0000) //Read Local Temperature
+    cmd += zigbee.readAttribute(0x201, 0x0008) //Read PI Heating State  
+    cmd += zigbee.readAttribute(0x201, 0x0012) //Read Heat Setpoint
+    cmd += zigbee.readAttribute(0x201, 0x001C) //Read System Mode
+    cmd += zigbee.readAttribute(0x201, 0x401C, [mfgCode: "0x1185"]) //Read System Mode
     
     cmds += zigbee.readAttribute(0x204, 0x0000) //Read Temperature Display Mode
     cmds += zigbee.readAttribute(0x204, 0x0001) //Read Keypad Lockout
     
     return cmds
 */
+    sendZigbeeCommands(cmd)
 }    
 
 
@@ -331,97 +338,44 @@ def getTemperature(value) {
 
 
 ///////////// commands ///////////////
-
-// clusterId = EF00
-
-// off = 0
-// manual/hubitat = 2
-// auto/trv schedual = 1
-
-//send in hex?
-
-    //cluster_frame = '11'
-    //cmd = '00' # Command
-    //action = '0404' # Mode
-    //data = '%02x' %( mode // 10 )
-    //tuya_cmd( self, nwkid, EPout, cluster_frame, sqn, cmd, action, data)   
-void sendZigbeeCommands(List<String> cmds) {
-
-	// All hub commands go through here for immediate transmission and to avoid some method() weirdness.
-
-    //logging("${device} : sendZigbeeCommands received : ${cmds}", "trace")
-    log.debug "$cmds"
-    sendHubCommand(new hubitat.device.HubMultiAction(cmds, hubitat.device.Protocol.ZIGBEE))
-
+private sendTuyaCommand(dp, fn, data) { // everything goes through here
+	log.info "sending ${zigbee.convertToHexString(rand(256), 2)}=${dp},${fn},${data}"
+	zigbee.command(CLUSTER_TUYA, SETDATA, "00" + zigbee.convertToHexString(rand(256), 2) + dp + fn + data)
 }
 
+private getCLUSTER_TUYA() { 0xEF00 }
+private getSETDATA() { 0x00 }
+
+private rand(n) {
+	return (new Random().nextInt(n))
+} 
+
 def off() {
-    //sendTuyaCommand(0x00, "6801000100")
-    Random rnd = new Random()
-    String payload = 0404000100
-    String fullPayload = "00${HexUtils.integerToHexString(rnd.nextInt(255),1)}" + payload
-    //sendZigbeeCommands(zigbeeCommand(0x01, 0xEF00, 0x00, 101, fullPayload))
-      //sendZigbeeCommands(zigbeeCommand(0x01, 0xEF00, 0x00, fullPayload))
- // sendZigbeeCommands(["he raw ${device.deviceNetworkId} 0 0 0x0031 {00 ${zigbee.swapOctets(device.deviceNetworkId)} 0} {0x0000}"])
-    sendZigbeeCommands(["he raw ${device.deviceNetworkId} 0 0 0x0031 {00 ${zigbee.swapOctets(device.deviceNetworkId)} 0} {0x0000}"])
-    //sendZigbeeCommands(zigbee.off())
-    //(java.lang.Integer, java.lang.Integer, java.lang.Integer, java.lang.Integer) values: [1, 61184, 0, 68157605]
-    //[he cmd 0x3E03 0x01 6 0 {}, delay 2000]
-    //0104 0006 01 01 0040 00 3E03 00 00 0000 0B 01 00C3
-    //zigbee.writeAttribute(0x01, 0xEF00, 0x00, 101, , 0404000100) // MODE
-    
+    def dp = "0404"
+    def fn = "0001"
+    def data = "00" // off
+	log.info "Off command ${dp}${fn}${data}"
+    sendTuyaCommand(dp,fn,data)
 }
 
 def heat() { //manual and hubitat control
     updateDataValue("lastRunningMode", "heat")
-    //def cmds = []
-    //cmds += zigbee.writeAttribute(0x201, 0x001C, 0x30, 04, [:], 1000) // MODE
-    //cmds += zigbee.writeAttribute(0x201, 0x401C, 0x30, 04, [mfgCode: "0x1185"]) // SETPOINT MODE    
-    //return cmds
-}
-
-def eco() { //holiday
-    updateDataValue("lastRunningMode", "cool")
-   // def cmds = []
-   // cmds += zigbee.writeAttribute(0x201, 0x001C, 0x30, 04, [:], 1000) // MODE
-   // cmds += zigbee.writeAttribute(0x201, 0x401C, 0x30, 05, [mfgCode: "0x1185"]) // SETPOINT MODE    
-   // return cmds
-}
-
-def cool() {
-    log.info "cool mode is not available for this device. => Defaulting to eco mode instead."
-    eco()
+    def dp = "0404"
+    def fn = "0001"
+    def data = "02" // on
+	log.info "On/heat/manual command ${zigbee.convertToHexString(rand(256), 2)}${dp}${fn}${data}"
+    sendTuyaCommand(dp,fn,data)
 }
 
 def auto() {
-    // auto/trv schedual = 1
     updateDataValue("lastRunningMode", "heat")
+    def dp = "0404"
+    def fn = "0001"
+    def data = "01" // auto mode, internal schdual
+	log.info "auto mode, internal schdual command ${zigbee.convertToHexString(rand(256), 2)}${dp}${fn}${data}"
+	sendTuyaCommand(dp,fn,data)
 }
 
-def emergencyHeat() {
-    log.info "emergencyHeat mode is not available for this device. => Defaulting to heat mode instead."
-	heat()
-}
-
-def fanAuto() {
-    log.info "fanAuto mode is not available for this device"
-}
-
-def fanCirculate(){
-    log.info "fanCirculate mode is not available for this device"
-}
-
-def fanOn(){
-    log.info "fanOn mode is not available for this device"
-}
-
-def setSchedule(JSON_OBJECT){
-    log.info "setSchedule is not available for this device"
-}
-
-def setThermostatFanMode(fanmode){
-    log.info "setThermostatFanMode is not available for this device"
-}
 
 def setHeatingSetpoint(preciseDegrees) {
     //cluster_frame = '11'
@@ -432,19 +386,10 @@ def setHeatingSetpoint(preciseDegrees) {
 	if (preciseDegrees != null) {
     //    zigbee.writeAttribute(0x201, 0x0012, 0x29, celsius100) //Write Heat Setpoint      
 	}
-}
-
-def setCoolingSetpoint(degrees) {
-    log.info "setCoolingSetpoint is not available for this device"
+    //sendTuyaCommand(dp,fn,data)
 }
 
 def setThermostatMode(String value) {
-/*
-// clusterId = EF00?
-// off = 0
-// manual/hubitat = 2
-// auto/trv schedual = 1
-*/
     switch (value) {
         case "heat":
         case "emergency heat":
@@ -486,4 +431,46 @@ void updateDataFromSimpleDescriptorData(List<String> data) {
         log.warn("No VALID Simple Descriptor Data received!")
     }
     sdi = null
+}
+
+
+//unused commands
+def eco() { //holiday
+    updateDataValue("lastRunningMode", "cool")
+    log.info "eco mode is not available for this device. => Defaulting to off mode instead."
+    off()
+}
+
+def cool() {
+    log.info "cool mode is not available for this device. => Defaulting to eco mode instead."
+    eco()
+}
+
+def emergencyHeat() {
+    log.info "emergencyHeat mode is not available for this device. => Defaulting to heat mode instead."
+	heat()
+}
+
+def setCoolingSetpoint(degrees) {
+    log.info "setCoolingSetpoint is not available for this device"
+}
+
+def fanAuto() {
+    log.info "fanAuto mode is not available for this device"
+}
+
+def fanCirculate(){
+    log.info "fanCirculate mode is not available for this device"
+}
+
+def fanOn(){
+    log.info "fanOn mode is not available for this device"
+}
+
+def setSchedule(JSON_OBJECT){
+    log.info "setSchedule is not available for this device"
+}
+
+def setThermostatFanMode(fanmode){
+    log.info "setThermostatFanMode is not available for this device"
 }
