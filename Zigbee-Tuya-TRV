@@ -70,7 +70,9 @@ ArrayList<String> parse(String description) {
         }
     
         if(msgMap.containsKey("encoding") && msgMap.containsKey("value") && msgMap["encoding"] != "41" && msgMap["encoding"] != "42") {
-            msgMap["valueParsed"] = zigbee_generic_decodeZigbeeData(msgMap["value"], msgMap["encoding"])
+            log.debug "testing refresh - ${description}"
+            
+            //msgMap["valueParsed"] = zigbee_generic_decodeZigbeeData(msgMap["value"], msgMap["encoding"])
         }
         
         if(msgMap == [:] && description.indexOf("zone") == 0) {
@@ -136,14 +138,14 @@ ArrayList<String> parse(String description) {
                     break
                 //////////////////////////////////////////////////////////////////////////////MC
                 case "EF00":  
-                    log.debug "clutsInt= ${msgMap[clusterInt]} ,att ID ${msgMap["attrId"]}, cluster ${msgMap["clusterId"]} -- ${msgMap}"
+                    //log.debug "clutsInt= ${msgMap[clusterInt]} ,att ID ${msgMap["attrId"]}, cluster ${msgMap["clusterId"]} -- ${msgMap}"
                     List data = msgMap['data']
                     if (data[2] && data[3]){
                         String commandType = data[2] + data[3]
                         switch(commandType){
-                            case "0202":
+                            case "0202": //set point temp
                                 String SetPoint = HexUtils.hexStringToInt(data[9]) / 10
-                                logging("tuya Temp Set Point ${commandType}, data9 ${SetPoint}")
+                                logging("${device.displayName} Temp Set Point ${commandType}, data9 ${SetPoint}")
                                 sendEvent(name: "heatingSetpoint", value: SetPoint, unit: "C")
 	                            sendEvent(name: "thermostatSetpoint", value: SetPoint, unit: "C")
                                 if (device.currentValue("thermostatMode") != "off" && SetPoint.toFloat() > device.currentValue("temperature").toFloat()) { 
@@ -151,18 +153,18 @@ ArrayList<String> parse(String description) {
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
                                 break
                             
-                            case '0302':       
+                            case '0302': //Temparature
                                 String temperature = HexUtils.hexStringToInt(data[9])/ 10
-                                logging("Temp tuya, ${temperature}, data ${msgMap["data"]}")
+                                logging("${device.displayName} Temp ${temperature}, data ${msgMap["data"]}")
                                 sendEvent(name: "temperature", value: temperature, unit: "C" )
                                 if (device.currentValue("thermostatMode") != "off" && temperature.toFloat() < device.currentValue("thermostatSetpoint").toFloat()) {
                                     sendEvent(name: "thermostatOperatingState", value: "heating")}
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
                                 break
                             
-                            case '0404':
+                            case '0404': // Mode
                                 String mode = HexUtils.hexStringToInt(data[6])
-                            logging("tuya mode ${commandType}, raw=${msgMap} data=${data} ,dec=${mode}")
+                            logging("${device.displayName} mode Code=${mode}")
                                 switch (mode){
                                     case '0':
                                         sendEvent(name: "thermostatMode", value: "off" )
@@ -175,21 +177,69 @@ ArrayList<String> parse(String description) {
                                     break
                                 }
                                 break
+       ///// battery --- DEV
                             case '0215':
                                 String values = data.collect{c -> HexUtils.hexStringToInt(c)}
-                                log.debug "tuya battery ${values}"
+                                //logging("${device.displayName} battery ${}")
+                                log.warn "reserch tuya battery ${values}"
                                 //sendEvent(name: "battery", value: TBC, unit:"%" )
                                 // 6702 - [68, 13, 103, 2, 0, 4, 0, 0, 0, 35] ?3.5 volt?
-                            
                             break
-                            case '6D02':
+                            
+                            case '6D02': // Valve position
                                 String valve = HexUtils.hexStringToInt(data[9])
                                 logging("tuya valve position ${valve}")
                                 sendEvent(name: "valve", value: valve, unit: "%", descriptionText: "Valve open ${valve}%")
                             break
+        //// Temperature correction reporting ---DEV   
+                            case '2C02': //Temperature correction reporting
+                                String temperatureCorr = HexUtils.hexStringToInt(data[9])/ 10
+                                logging("${device.displayName} Temp correction reporting DEV STILL, ${temperatureCorr}, data ${msgMap["data"]}")
+                            break
+         // Child lock --- DEV                   
+                            case '0701': // Child lock
+                                String locked = HexUtils.hexStringToInt(data[6])
+                                logging("${device.displayName} child lock ${commandType}, raw=${msgMap} data=${data} ,dec=${mode}")
+                                switch (locked){
+                                    case '0':
+                                        sendEvent(name: "childLock", value: "off" )
+                                    break
+                                    case '1':
+                                    sendEvent(name: "childLock", value: "on")
+                                    break
+                                }
+                            break
+                            case '7401': // auto lock setting A3
+                                String autolock = HexUtils.hexStringToInt(data[6])
+                                switch (autolock){
+                                    case '0':
+                                        logging("${device.displayName} Auto lock A3 Off")
+                                    break
+                                    case '1':
+                                    logging("${device.displayName} Auto lock A3 On ather 10min")
+                                    break
+                                }
+                            break
+                            case '6800': //window open detection
+                                logging("${device.displayName} window open detection ${data[7]}deg in ${data[8]}min will trigger shutdown")
+                            break
+                            
+                           case '6902': //boost -- Dev
+                                String values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                logging("${device.displayName} boost ${values}")
+                            break
+                            
+                            case '7000': // schedule setting aka Auto mode -- Dev
+                            logging("${device.displayName} schedual P1 ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
+                            break
+                            
+                            case '7001': // schedule setting aka Auto mode -- Dev
+                                logging("${device.displayName} schedual P2 ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
+                            break
+                            
                             default:
                                 String values = data.collect{c -> HexUtils.hexStringToInt(c)}
-                                log.debug "other tuya cluster EF00 - ${commandType} - ${values} "
+                                log.debug "${device.displayName} other EF00 cluster - ${commandType} - ${values} "
                                 break
                         }
                     }
@@ -209,6 +259,7 @@ ArrayList<String> parse(String description) {
     msgMap = null
     return cmd
 }
+
 
 
 def logsOff(){
@@ -260,30 +311,16 @@ private boolean logging(message) {
 ////////////////////////////////////////////////////////////////////////////
 
 def refresh() {
-    log.debug "refresh"
-    ArrayList<String> cmd = []
-    cmd += zigbee.readAttribute(0x000, 0x0004)
-    cmd += zigbee.readAttribute(0x000, 0x0005)
-  //he raw 0x3E03 1 0x01 0x0000 {10 00 00 04 00}, delay 2000, he raw 0x3E03 1 0x01 0x0000 {10 00 00 05 00}, delay 2000]
+    //def dp = "0404"
+    //def fn = "0001"
+    //def data = "00" // ??
+    //log.info "Off command ${dp}${fn}${data}"    
+    //zigbee.command(CLUSTER_TUYA, SETDATA, "00" + zigbee.convertToHexString(rand(256), 2) + dp + fn + data)
+	//zigbee.readAttribute(CLUSTER_TUYA, 0x00, )
+    //zigbee.readAttribute(0x0000, 0x0005)
+    //zigbee.readAttribute(0x0000)
     
-    //cmd += zigbee.readAttribute(0x000, EF00)
-    
-    //sendZigbeeCommands(cmd)
-//need to understand commands
-/*    def cmds = []
-    
-    cmd += zigbee.readAttribute(0x201, 0x0000) //Read Local Temperature
-    cmd += zigbee.readAttribute(0x201, 0x0008) //Read PI Heating State  
-    cmd += zigbee.readAttribute(0x201, 0x0012) //Read Heat Setpoint
-    cmd += zigbee.readAttribute(0x201, 0x001C) //Read System Mode
-    cmd += zigbee.readAttribute(0x201, 0x401C, [mfgCode: "0x1185"]) //Read System Mode
-    
-    cmds += zigbee.readAttribute(0x204, 0x0000) //Read Temperature Display Mode
-    cmds += zigbee.readAttribute(0x204, 0x0001) //Read Keypad Lockout
-    
-    return cmds
-*/
-    sendZigbeeCommands(cmd)
+    // ????????private getPOWER_ATTR_BATTERY_PERCENTAGE_REMAINING() { 0x0021 }
 }    
 
 
@@ -317,24 +354,8 @@ def configure(){
 */
 }
 
-def getModeMap() { [
-	"00":"off",
-    "04":"heat",
-	"05":"eco"
-]}
 
-def getTemperature(value) {
-	if (value != null) {
-    	
-		def celsius = Integer.parseInt(value, 16) / 100
-		if (getTemperatureScale() == "C") {
-			return celsius
-		}
-        else {
-			return Math.round(celsiusToFahrenheit(celsius))
-		}
-	}
-}
+
 
 
 ///////////// commands ///////////////
@@ -350,11 +371,11 @@ private rand(n) {
 	return (new Random().nextInt(n))
 } 
 
-def off() {
+def off() { // this is away setting heat point
     def dp = "0404"
     def fn = "0001"
     def data = "00" // off
-	log.info "Off command ${dp}${fn}${data}"
+	log.info "Off command, this is away setting heat point ${dp}${fn}${data}"
     sendTuyaCommand(dp,fn,data)
 }
 
@@ -376,17 +397,17 @@ def auto() {
 	sendTuyaCommand(dp,fn,data)
 }
 
-
 def setHeatingSetpoint(preciseDegrees) {
-    //cluster_frame = '11'
-    //cmd = '00' # Command
-    //action = '0202'
-    //data = '%08x' %setpoint_value
-    //tuya_cmd( self, nwkid, EPout, cluster_frame, sqn, cmd, action, data)
-	if (preciseDegrees != null) {
-    //    zigbee.writeAttribute(0x201, 0x0012, 0x29, celsius100) //Write Heat Setpoint      
-	}
-    //sendTuyaCommand(dp,fn,data)
+    log.debug "setpoint $preciseDegrees"
+    def dp = "0201"
+    //def dp = "0202"
+    def fn = "0001"
+    Integer setP = preciseDegrees / 10
+    log.debug "$setP"
+    //def data = zigbee.convertToHexString(setP, 2)
+    def data = "15"
+	log.info "Set setpoint command ${zigbee.convertToHexString(rand(256), 2)}${dp}${fn}${data}"
+	sendTuyaCommand(dp,fn,data)
 }
 
 def setThermostatMode(String value) {
@@ -434,7 +455,7 @@ void updateDataFromSimpleDescriptorData(List<String> data) {
 }
 
 
-//unused commands
+//unused commands and redirected
 def eco() { //holiday
     updateDataValue("lastRunningMode", "cool")
     log.info "eco mode is not available for this device. => Defaulting to off mode instead."
