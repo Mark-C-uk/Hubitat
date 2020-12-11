@@ -15,6 +15,9 @@ metadata {
         capability "Refresh"
         
         attribute "valve", "String"
+        attribute "WindowOpenDetection","String"
+        attribute "autolock","String"
+        attribute "childLock","String"
         
         
 ///to do		fingerprint profileId: "0104", endpointId: "19", inClusters: " 0000,0003,0201,0204", outClusters: "0402"
