@@ -214,14 +214,19 @@ ArrayList<String> parse(String description) {
                                 switch (autolock){
                                     case '0':
                                         logging("${device.displayName} Auto lock A3 Off")
+                                        sendEvent(name: "autolock", value: "off")
                                     break
                                     case '1':
                                     logging("${device.displayName} Auto lock A3 On ather 10min")
+                                    sendEvent(name: "autolock", value: "on")
                                     break
                                 }
                             break
                             case '6800': //window open detection
-                                logging("${device.displayName} window open detection ${data[7]}deg in ${data[8]}min will trigger shutdown")
+                                String WinTemp = HexUtils.hexStringToInt(data[7])
+                                String WinMink = HexUtils.hexStringToInt(data[8])
+                                logging("${device.displayName} window open detection ${WinTemp}deg in ${WinMin}min will trigger shutdown")
+                                sendEvent(name: "WindowOpenDetection", value: "${WinTemp}deg in ${WinMin}min")
                             break
                             
                            case '6902': //boost -- Dev
@@ -329,29 +334,11 @@ def configure(){
     log.warn "configure..."
     runIn(1800,logsOff)    
 	//binding to Thermostat cluster"
-    
     // Set unused default values (for Google Home Integration)
-    sendEvent(name: "coolingSetpoint", value:getTemperature("0BB8")) // 0x0BB8 =  30 Celsius
+    sendEvent(name: "coolingSetpoint", value: "30")
     sendEvent(name: "thermostatFanMode", value:"auto")
     updateDataValue("lastRunningMode", "heat") // heat is the only compatible mode for this device
-/*    
-    def cmds = [
-    //bindings
-        "zdo bind 0x${device.deviceNetworkId} 1 0x019 0x201 {${device.zigbeeId}} {}", "delay 200"
-        ]
-    
-    //reporting
-    cmds += zigbee.configureReporting(0x201, 0x0000, 0x29, 10, 60, 50)   //Attribute ID 0x0000 = local temperature, Data Type: S16BIT
-    cmds += zigbee.configureReporting(0x201, 0x0008, 0x20, 10, 900, 5)   //Attribute ID 0x0008 = pi heating demand, Data Type: U8BIT
-    cmds += zigbee.configureReporting(0x201, 0x0012, 0x29, 1, 0, 50)     //Attribute ID 0x0012 = occupied heat setpoint, Data Type: S16BIT
-    cmds += zigbee.configureReporting(0x201, 0x001C, 0x30, 1, 0, 1)      //Attribute ID 0x001C = system mode, Data Type: 8 bits enum
-    cmds += zigbee.configureReporting(0x201, 0x401C, 0x30, 1, 0, 1, [mfgCode: "0x1185"])   	   //Attribute ID 0x401C = manufacturer specific setpoint mode, Data Type: 8 bits enum
-    
-    cmds += zigbee.configureReporting(0x204, 0x0000, 0x30, 1, 0)   	  //Attribute ID 0x0000 = temperature display mode, Data Type: 8 bits enum
-    cmds += zigbee.configureReporting(0x204, 0x0001, 0x30, 1, 0)   	  //Attribute ID 0x0001 = keypad lockout, Data Type: 8 bits enum
-    
-    return cmds + refresh()
-*/
+
 }
 
 
