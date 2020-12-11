@@ -398,16 +398,14 @@ def auto() {
 }
 
 def setHeatingSetpoint(preciseDegrees) {
-    log.debug "setpoint $preciseDegrees"
-    def dp = "0201"
-    //def dp = "0202"
-    def fn = "0001"
-    Integer setP = preciseDegrees / 10
-    log.debug "$setP"
-    //def data = zigbee.convertToHexString(setP, 2)
-    def data = "15"
-	log.info "Set setpoint command ${zigbee.convertToHexString(rand(256), 2)}${dp}${fn}${data}"
-	sendTuyaCommand(dp,fn,data)
+	if (preciseDegrees != null) {
+        def dp = "0202"
+        def fn = "00"
+        def SP = preciseDegrees *10
+        def data = "04000000" + zigbee.convertToHexString(SP.intValue(), 2)
+	    log.info "heating ${dp}${fn}${data}"
+	    sendTuyaCommand(dp,fn,data)
+	}
 }
 
 def setThermostatMode(String value) {
