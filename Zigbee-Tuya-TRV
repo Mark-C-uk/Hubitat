@@ -19,9 +19,8 @@ metadata {
         attribute "autolock","String"
         attribute "childLock","String"
         
-        
-///to do		fingerprint profileId: "0104", endpointId: "19", inClusters: " 0000,0003,0201,0204", outClusters: "0402"
-    }
+    fingerprint endpointId: "01", profileId: "0104", inClusters: "0000,0004,0005,EF00", outClusters: "0019,000A", manufacturer: "_TZE200_ckud7u2l", model: "TS0601", deviceJoinName: "Zigbee - Tuya TRV" 
+}
     
     preferences {
         //input("lock", "enum", title: "Do you want to lock your thermostat's physical keypad?", options: ["No", "Yes"], defaultValue: "No", required: false, displayDuringSetup: false)
@@ -34,48 +33,32 @@ ArrayList<String> parse(String description) {
     //log.debug "parse $description"
     ArrayList<String> cmd = []
     Map msgMap = null
-    if(description.indexOf('encoding: 4C') >= 0) {
-        msgMap = zigbee.parseDescriptionAsMap(description.replace('encoding: 4C', 'encoding: F2'))
-        msgMap = unpackStructInMap(msgMap)
-        log.warn "parse 1 encoding: 4C >= 0"
-    } 
-    else if(description.indexOf('attrId: FF01, encoding: 42') >= 0) {
-        msgMap = zigbee.parseDescriptionAsMap(description.replace('encoding: 42', 'encoding: F2'))
-        msgMap["encoding"] = "41"
-        msgMap["value"] = parseXiaomiStruct(msgMap["value"], isFCC0=false, hasLength=true)
-        log.warn "parse 2 attrId: FF01 encoding: 4C >= 0"
-    } 
-    else {
-        if(description.indexOf('encoding: 42') >= 0) {
-            List values = description.split("value: ")[1].split("(?<=\\G..)")
-            String fullValue = values.join()
-            Integer zeroIndex = values.indexOf("01")
-                if(zeroIndex > -1) {
-                    msgMap = zigbee.parseDescriptionAsMap(description.replace(fullValue, values.take(zeroIndex).join()))
-                    values = values.drop(zeroIndex + 3)
-                    msgMap["additionalAttrs"] = [
+
+    if(description.indexOf('encoding: 42') >= 0) {
+        List values = description.split("value: ")[1].split("(?<=\\G..)")
+        String fullValue = values.join()
+        Integer zeroIndex = values.indexOf("01")
+            if(zeroIndex > -1) {
+                msgMap = zigbee.parseDescriptionAsMap(description.replace(fullValue, values.take(zeroIndex).join()))
+                values = values.drop(zeroIndex + 3)
+                msgMap["additionalAttrs"] = [
                     ["encoding": "41",
                     "value": parseXiaomiStruct(values.join(), isFCC0=false, hasLength=true)]
                     ]
-                    log.warn "warn 3-1-1"
-                } 
-                else {
-                    msgMap = zigbee.parseDescriptionAsMap(description)
-                    log.warn "used for refresh parse 3b"
-                }
-        log.warn "used for refresh - parse 3-1-2 encoding: 4C >= 0"
+                log.warn "encoding: 42 parse 37 IF true"
+            } 
+            else {
+                msgMap = zigbee.parseDescriptionAsMap(description) //modle name
+                log.warn "encoding: 42 parse 51 ELSE true"
+            }
         } 
         else {
-            ///used
             msgMap = zigbee.parseDescriptionAsMap(description)
-               //log.warn "used for refresh - else parse 3-1-3 encoding: 4C >= 0"
-            //used
         }
     
         if(msgMap.containsKey("encoding") && msgMap.containsKey("value") && msgMap["encoding"] != "41" && msgMap["encoding"] != "42") {
-            log.debug "testing refresh - ${description}"
-            
-            //msgMap["valueParsed"] = zigbee_generic_decodeZigbeeData(msgMap["value"], msgMap["encoding"])
+            log.warn "pase lin 59 used - ${description}"
+            msgMap["valueParsed"] = zigbee_generic_decodeZigbeeData(msgMap["value"], msgMap["encoding"])
         }
         
         if(msgMap == [:] && description.indexOf("zone") == 0) {
@@ -91,8 +74,8 @@ ArrayList<String> parse(String description) {
             else {
                msgMap["parsed"] = false
             }
+            log.warn "line 64 section used"
         }
-    }
 
     switch(msgMap["cluster"] + '_' + msgMap["attrId"]) {
         case "0000_0001":
@@ -114,6 +97,7 @@ ArrayList<String> parse(String description) {
             }    
             break
         default:
+            log.debug " ${msgMap["cluster"]}  ${msgMap["attrId"]} $msgMap"
             switch(msgMap["clusterId"]) {
                 case "0013":
                     logging("MULTISTATE CLUSTER EVENT")
@@ -139,7 +123,7 @@ ArrayList<String> parse(String description) {
                 case "8038":
                     logging("GENERAL CATCHALL (0x${msgMap["clusterId"]}")
                     break
-                //////////////////////////////////////////////////////////////////////////////MC
+///////////TUYA TRV messages////////////
                 case "EF00":  
                     //log.debug "clutsInt= ${msgMap[clusterInt]} ,att ID ${msgMap["attrId"]}, cluster ${msgMap["clusterId"]} -- ${msgMap}"
                     List data = msgMap['data']
@@ -167,7 +151,7 @@ ArrayList<String> parse(String description) {
                             
                             case '0404': // Mode
                                 String mode = HexUtils.hexStringToInt(data[6])
-                            logging("${device.displayName} mode Code=${mode}")
+                                logging("${device.displayName} mode Code=${mode}")
                                 switch (mode){
                                     case '0':
                                         sendEvent(name: "thermostatMode", value: "off" )
@@ -181,7 +165,7 @@ ArrayList<String> parse(String description) {
                                 }
                                 break
        ///// battery --- DEV
-                            case '0215':
+                            case '1502':
                                 String values = data.collect{c -> HexUtils.hexStringToInt(c)}
                                 //logging("${device.displayName} battery ${}")
                                 log.warn "reserch tuya battery ${values}"
@@ -202,7 +186,7 @@ ArrayList<String> parse(String description) {
          // Child lock --- DEV                   
                             case '0701': // Child lock
                                 String locked = HexUtils.hexStringToInt(data[6])
-                                logging("${device.displayName} child lock ${commandType}, raw=${msgMap} data=${data} ,dec=${mode}")
+                                logging("${device.displayName} child lock ${commandType}, ${locked} 1 - is locked 0 is unlocked")
                                 switch (locked){
                                     case '0':
                                         sendEvent(name: "childLock", value: "off" )
@@ -247,7 +231,7 @@ ArrayList<String> parse(String description) {
                             
                             default:
                                 String values = data.collect{c -> HexUtils.hexStringToInt(c)}
-                                log.debug "${device.displayName} other EF00 cluster - ${commandType} - ${values} "
+                                log.debug "${device.displayName} other EF00 cluster - ${commandType} - ${values} ${data}"
                                 break
                         }
                     }
@@ -297,6 +281,15 @@ Map unpackStructInMap(Map msgMap, String originalEncoding="4C") {
     msgMap['value'] = r
     return msgMap
 }
+def zigbee_generic_decodeZigbeeData(String value, String cTypeStr, boolean reverseBytes=true) {
+    List values = value.split("(?<=\\G..)")
+    values = reverseBytes == true ? values.reverse() : values
+    Integer cType = Integer.parseInt(cTypeStr, 16)
+    Map rMap = [:]
+    rMap['raw'] = [:]
+    List ret = zigbee_generic_convertStructValue(rMap, values, cType, "NA", "NA")
+    return ret[0]["NA"]
+}
 
 // BEGIN:getLoggingFunction()
 private boolean logging(message) {
@@ -319,19 +312,27 @@ private boolean logging(message) {
 ////////////////////////////////////////////////////////////////////////////
 
 def refresh() {
-    //def dp = "0404"
-    //def fn = "0001"
-    //def data = "00" // ??
-    //log.info "Off command ${dp}${fn}${data}"    
-    //zigbee.command(CLUSTER_TUYA, SETDATA, "00" + zigbee.convertToHexString(rand(256), 2) + dp + fn + data)
-	//zigbee.readAttribute(CLUSTER_TUYA, 0x00, )
-    //zigbee.readAttribute(0x0000, 0x0005)
-    //zigbee.readAttribute(0x0000)
+    def dp = "0302"
+    def fn = "0"
+    def data = "00" // ??
     
+    log.debug "refresh"
+    zigbee.readAttribute(0x0000, CLUSTER_TUYA) //get setting but not temparture
+    
+    //zigbee.readAttribute(0x0000, 0x0402)
+    
+    
+   //zigbee.readAttribute(0x0000, 0x0005) //encoding: 42 parse 51 ELSE true Model Name Received 0000_0005
+   //zigbee.readAttribute(0x0000, 0x0000) // 0000 0000
+    
+    // nothing zigbee.readAttribute(0x0000, CLUSTER_TUYA, [:] ) 
+    // nothing zigbee.readAttribute(0x0402,0x0000) 
+    // error   zigbee.readAttribute(0x0000)
+    // nothing zigbee.readAttribute(0x0000, 0x0021)
+    
+    //sendTuyaCommand(dp,fn,data)
     // ????????private getPOWER_ATTR_BATTERY_PERCENTAGE_REMAINING() { 0x0021 }
 }    
-
-
 
 def configure(){    
     log.warn "configure..."
@@ -344,28 +345,21 @@ def configure(){
 
 }
 
-
-
-
-
 ///////////// commands ///////////////
 private sendTuyaCommand(dp, fn, data) { // everything goes through here
-	log.info "sending ${zigbee.convertToHexString(rand(256), 2)}=${dp},${fn},${data}"
+	//log.info "sending ${zigbee.convertToHexString(rand(256), 2)}=${dp},${fn},${data}"
 	zigbee.command(CLUSTER_TUYA, SETDATA, "00" + zigbee.convertToHexString(rand(256), 2) + dp + fn + data)
 }
 
 private getCLUSTER_TUYA() { 0xEF00 }
 private getSETDATA() { 0x00 }
-
-private rand(n) {
-	return (new Random().nextInt(n))
-} 
+private rand(n) { return (new Random().nextInt(n))} 
 
 def off() { // this is away setting heat point
     def dp = "0404"
     def fn = "0001"
     def data = "00" // off
-	log.info "Off command, this is away setting heat point ${dp}${fn}${data}"
+	log.info "Off command, this is away setting heat point"
     sendTuyaCommand(dp,fn,data)
 }
 
@@ -374,7 +368,7 @@ def heat() { //manual and hubitat control
     def dp = "0404"
     def fn = "0001"
     def data = "02" // on
-	log.info "On/heat/manual command ${zigbee.convertToHexString(rand(256), 2)}${dp}${fn}${data}"
+	log.info "On/heat/manual command"
     sendTuyaCommand(dp,fn,data)
 }
 
@@ -393,7 +387,7 @@ def setHeatingSetpoint(preciseDegrees) {
         def fn = "00"
         def SP = preciseDegrees *10
         def data = "04000000" + zigbee.convertToHexString(SP.intValue(), 2)
-	    log.info "heating ${dp}${fn}${data}"
+	    log.info "heating setpoint to ${preciseDegrees}"
 	    sendTuyaCommand(dp,fn,data)
 	}
 }
@@ -482,4 +476,125 @@ def setSchedule(JSON_OBJECT){
 
 def setThermostatFanMode(fanmode){
     log.info "setThermostatFanMode is not available for this device"
+}
+
+
+List zigbee_generic_convertStructValueToList(List values, Integer cType) {
+    Map rMap = [:]
+    rMap['raw'] = [:]
+    List ret = zigbee_generic_convertStructValue(rMap, values, cType, "NA", "NA")
+    return [ret[0]["NA"], ret[1]]
+}
+
+List zigbee_generic_convertStructValue(Map r, List values, Integer cType, String cKey, String cTag) {
+    String cTypeStr = cType != null ? integerToHexString(cType, 1) : null
+    switch(cType) {
+        case 0x10:
+            r["raw"][cKey] = values.take(1)[0]
+            r[cKey] = Integer.parseInt(r["raw"][cKey], 16) != 0
+            values = values.drop(1)
+            break
+        case 0x18:
+        case 0x20:
+            r["raw"][cKey] = values.take(1)[0]
+            r[cKey] = Integer.parseInt(r["raw"][cKey], 16)
+            values = values.drop(1)
+            break
+        case 0x19:
+        case 0x21:
+            r["raw"][cKey] = values.take(2).reverse().join()
+            r[cKey] = Integer.parseInt(r["raw"][cKey], 16)
+            values = values.drop(2)
+            break
+        case 0x1A:
+        case 0x22:
+            r["raw"][cKey] = values.take(3).reverse().join()
+            r[cKey] = Integer.parseInt(r["raw"][cKey], 16)
+            values = values.drop(3)
+            break
+        case 0x1B:
+        case 0x23:
+            r["raw"][cKey] = values.take(4).reverse().join()
+            r[cKey] = Long.parseLong(r["raw"][cKey], 16)
+            values = values.drop(4)
+            break
+        case 0x1C:
+        case 0x24:
+            r["raw"][cKey] = values.take(5).reverse().join()
+            r[cKey] = Long.parseLong(r["raw"][cKey], 16)
+            values = values.drop(5)
+            break
+        case 0x1D:
+        case 0x25:
+            r["raw"][cKey] = values.take(6).reverse().join()
+            r[cKey] = Long.parseLong(r["raw"][cKey], 16)
+            values = values.drop(6)
+            break
+        case 0x1E:
+        case 0x26:
+            r["raw"][cKey] = values.take(7).reverse().join()
+            r[cKey] = Long.parseLong(r["raw"][cKey], 16)
+            values = values.drop(7)
+            break
+        case 0x1F:
+        case 0x27:
+            r["raw"][cKey] = values.take(8).reverse().join()
+            r[cKey] = new BigInteger(r["raw"][cKey], 16)
+            values = values.drop(8)
+            break
+        case 0x28:
+            r["raw"][cKey] = values.take(1).reverse().join()
+            r[cKey] = convertToSignedInt8(Integer.parseInt(r["raw"][cKey], 16))
+            values = values.drop(1)
+            break
+        case 0x29:
+            r["raw"][cKey] = values.take(2).reverse().join()
+            r[cKey] = (Integer) (short) Integer.parseInt(r["raw"][cKey], 16)
+            values = values.drop(2)
+            break
+        case 0x2B:
+            r["raw"][cKey] = values.take(4).reverse().join()
+            r[cKey] = (Integer) Long.parseLong(r["raw"][cKey], 16)
+            values = values.drop(4)
+            break
+        case 0x30:
+            r["raw"][cKey] = values.take(1)[0]
+            r[cKey] = Integer.parseInt(r["raw"][cKey], 16)
+            values = values.drop(1)
+            break
+        case 0x31:
+            r["raw"][cKey] = values.take(2).reverse().join()
+            r[cKey] = Integer.parseInt(r["raw"][cKey], 16)
+            values = values.drop(2)
+            break
+        case 0x39:
+            r["raw"][cKey] = values.take(4).reverse().join()
+            r[cKey] = parseSingleHexToFloat(r["raw"][cKey])
+            values = values.drop(4)
+            break
+        case 0x42:
+            Integer strLength = Integer.parseInt(values.take(1)[0], 16)
+            values = values.drop(1)
+            r["raw"][cKey] = values.take(strLength)
+            r[cKey] = r["raw"][cKey].collect { 
+                (char)(int) Integer.parseInt(it, 16)
+            }.join()
+            values = values.drop(strLength)
+            break
+        default:
+            throw new Exception("The Struct used an unrecognized type: $cTypeStr ($cType) for tag 0x$cTag with key $cKey (values: $values, map: $r)")
+    }
+    return [r, values]
+}
+String integerToHexString(BigDecimal value, Integer minBytes, boolean reverse=false) {
+    return integerToHexString(value.intValue(), minBytes, reverse=reverse)
+}
+
+String integerToHexString(Integer value, Integer minBytes, boolean reverse=false) {
+    if(reverse == true) {
+        return HexUtils.integerToHexString(value, minBytes).split("(?<=\\G..)").reverse().join()
+    } else {
+        return HexUtils.integerToHexString(value, minBytes)
+    }
+    
 }
