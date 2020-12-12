@@ -97,7 +97,7 @@ ArrayList<String> parse(String description) {
             }    
             break
         default:
-            log.debug " ${msgMap["cluster"]}  ${msgMap["attrId"]} $msgMap"
+            //log.debug " ${msgMap["cluster"]}  ${msgMap["attrId"]} $msgMap"
             switch(msgMap["clusterId"]) {
                 case "0013":
                     logging("MULTISTATE CLUSTER EVENT")
@@ -130,16 +130,23 @@ ArrayList<String> parse(String description) {
                     if (data[2] && data[3]){
                         String commandType = data[2] + data[3]
                         switch(commandType){
+//set point temp
                             case "0202": //set point temp
-                                String SetPoint = HexUtils.hexStringToInt(data[9]) / 10
+                                //String SetPoint = HexUtils.hexStringToInt(data[9]) / 10
+                                String SetPoint = HexUtils.hexStringToInt(data[-1]) / 10
                                 logging("${device.displayName} Temp Set Point ${commandType}, data9 ${SetPoint}")
                                 sendEvent(name: "heatingSetpoint", value: SetPoint, unit: "C")
 	                            sendEvent(name: "thermostatSetpoint", value: SetPoint, unit: "C")
                                 if (device.currentValue("thermostatMode") != "off" && SetPoint.toFloat() > device.currentValue("temperature").toFloat()) { 
                                     sendEvent(name: "thermostatOperatingState", value: "heating")}
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
-                                break
-                            
+                            break
+//7202 away preset temperature
+                            case "0702": //0x7202 away/off preset temperature
+                                String SetPoint = HexUtils.hexStringToInt(data[9]) / 10
+                                logging("${device.displayName} AWAY Temp Set Point ${commandType}, data9 ${SetPoint}")
+                            break
+//0302 Temparature                            
                             case '0302': //Temparature
                                 String temperature = HexUtils.hexStringToInt(data[9])/ 10
                                 logging("${device.displayName} Temp ${temperature}, data ${msgMap["data"]}")
@@ -148,7 +155,7 @@ ArrayList<String> parse(String description) {
                                     sendEvent(name: "thermostatOperatingState", value: "heating")}
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
                                 break
-                            
+// Mode                            
                             case '0404': // Mode
                                 String mode = HexUtils.hexStringToInt(data[6])
                                 logging("${device.displayName} mode Code=${mode}")
@@ -163,19 +170,19 @@ ArrayList<String> parse(String description) {
                                         sendEvent(name: "thermostatMode", value: "heat" )
                                     break
                                 }
-                                break
-       ///// battery --- DEV
+                            break
+// battery --- DEV
                             case '1502':
                                 String values = data.collect{c -> HexUtils.hexStringToInt(c)}
-                                //logging("${device.displayName} battery ${}")
-                                log.warn "reserch tuya battery ${values}"
-                                //sendEvent(name: "battery", value: TBC, unit:"%" )
+                                String batt = HexUtils.hexStringToInt(data[-1])
+                                logging("${device.displayName} battery ${batt}")
+                                sendEvent(name: "battery", value: batt, unit:"%" )
                                 // 6702 - [68, 13, 103, 2, 0, 4, 0, 0, 0, 35] ?3.5 volt?
                             break
                             
                             case '6D02': // Valve position
-                                String valve = HexUtils.hexStringToInt(data[9])
-                                logging("tuya valve position ${valve}")
+                                String valve = HexUtils.hexStringToInt(data[-1])
+                                logging("${device.displayName} valve position ${valve}")
                                 sendEvent(name: "valve", value: valve, unit: "%", descriptionText: "Valve open ${valve}%")
                             break
         //// Temperature correction reporting ---DEV   
@@ -204,8 +211,8 @@ ArrayList<String> parse(String description) {
                                         sendEvent(name: "autolock", value: "off")
                                     break
                                     case '1':
-                                    logging("${device.displayName} Auto lock A3 On ather 10min")
-                                    sendEvent(name: "autolock", value: "on")
+                                        logging("${device.displayName} Auto lock A3 On ather 10min")
+                                        sendEvent(name: "autolock", value: "on")
                                     break
                                 }
                             break
@@ -227,6 +234,10 @@ ArrayList<String> parse(String description) {
                             
                             case '7001': // schedule setting aka Auto mode -- Dev
                                 logging("${device.displayName} schedual P2 ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
+                            break
+// 0x7502 away preset number of days                            
+                            case '7502':
+                            logging("${device.displayName} away preset number of days ${HexUtils.hexStringToInt(data[-1])} ")
                             break
                             
                             default:
@@ -317,12 +328,19 @@ def refresh() {
     def data = "00" // ??
     
     log.debug "refresh"
-    zigbee.readAttribute(0x0000, CLUSTER_TUYA) //get setting but not temparture
+    zigbee.readAttribute(0 , 0 )
+    //zigbee.readAttribute(0, 0, 770 )
+    //zigbee.readAttribute(0x0000, CLUSTER_TUYA) //get setting but not temparture
+    //zigbee.readAttribute(0x0302, CLUSTER_TUYA) 
+    //zigbee.configureReporting(0x0000, CLUSTER_TUYA)
+    //zigbee.readAttribute(CLUSTER_TUYA, 0x0402) 
     
+    //configureReporting(java.lang.Integer, java.lang.Integer, java.lang.Integer, java.lang.Integer, java.lang.Integer), 
     //zigbee.readAttribute(0x0000, 0x0402)
     
     
-   //zigbee.readAttribute(0x0000, 0x0005) //encoding: 42 parse 51 ELSE true Model Name Received 0000_0005
+//    zigbee.readAttribute(0x0000, 0x0005) //encoding: 42 parse 51 ELSE true Model Name Received 0000_0005
+//    zigbee.readAttribute(0x0000, 0x0004)
    //zigbee.readAttribute(0x0000, 0x0000) // 0000 0000
     
     // nothing zigbee.readAttribute(0x0000, CLUSTER_TUYA, [:] ) 
@@ -332,18 +350,13 @@ def refresh() {
     
     //sendTuyaCommand(dp,fn,data)
     // ????????private getPOWER_ATTR_BATTERY_PERCENTAGE_REMAINING() { 0x0021 }
+//    return  [
+//            "he rattr 0x${device.deviceNetworkId} 0x${device.endpointId} 0x0000  0x0005 {}","delay 600", 
+//            "he rattr 0x${device.deviceNetworkId} 0x${device.endpointId} 0x0000, 0x0004 {}"
+//    ]
 }    
 
-def configure(){    
-    log.warn "configure..."
-    runIn(1800,logsOff)    
-	//binding to Thermostat cluster"
-    // Set unused default values (for Google Home Integration)
-    sendEvent(name: "coolingSetpoint", value: "30")
-    sendEvent(name: "thermostatFanMode", value:"auto")
-    updateDataValue("lastRunningMode", "heat") // heat is the only compatible mode for this device
 
-}
 
 ///////////// commands ///////////////
 private sendTuyaCommand(dp, fn, data) { // everything goes through here
@@ -364,7 +377,6 @@ def off() { // this is away setting heat point
 }
 
 def heat() { //manual and hubitat control
-    updateDataValue("lastRunningMode", "heat")
     def dp = "0404"
     def fn = "0001"
     def data = "02" // on
@@ -373,7 +385,6 @@ def heat() { //manual and hubitat control
 }
 
 def auto() {
-    updateDataValue("lastRunningMode", "heat")
     def dp = "0404"
     def fn = "0001"
     def data = "01" // auto mode, internal schdual
@@ -413,7 +424,7 @@ def setThermostatMode(String value) {
 def updated() {
     sendEvent(name: "supportedThermostatFanModes", value: [""])
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
-    sendEvent(name: "thermostatFanMode", value: "auto")
+    sendEvent(name: "thermostatFanMode", value: "off")
     log.info "${device.displayName} updated..."
 }
 def installed() {
@@ -421,6 +432,17 @@ def installed() {
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
     sendEvent(name: "thermostatFanMode", value: "auto")
     
+}
+def configure(){    
+    log.warn "configure..."
+    runIn(1800,logsOff)    
+	//binding to Thermostat cluster"
+    // Set unused default values (for Google Home Integration)
+    sendEvent(name: "coolingSetpoint", value: "30")
+    sendEvent(name: "thermostatFanMode", value:"auto")
+    updateDataValue("lastRunningMode", "heat") // heat is the only compatible mode for this device
+    updated()
+
 }
 void updateDataFromSimpleDescriptorData(List<String> data) {
     Map<String,String> sdi = parseSimpleDescriptorData(data)
@@ -439,7 +461,6 @@ void updateDataFromSimpleDescriptorData(List<String> data) {
 
 //unused commands and redirected
 def eco() { //holiday
-    updateDataValue("lastRunningMode", "cool")
     log.info "eco mode is not available for this device. => Defaulting to off mode instead."
     off()
 }
