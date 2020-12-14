@@ -187,7 +187,8 @@ def parse(String description) {
 
                     parsed = parseAttributeList(clusterId, attrList)
 
-                    if(state.colorChanged || (state.colorXReported && state.colorYReported)) {
+                    //if(state.colorChanged || (state.colorXReported && state.colorYReported)) {
+                    if(state.colorXReported && state.colorYReported) {
                         state.colorChanged = false;
                         state.colorXReported = false;
                         state.colorYReported = false;
@@ -198,8 +199,19 @@ def parse(String description) {
                     }
                 }
             }
+            else if(cluster.clusterId == 0x0008) {
+                def descMap = zigbee.parseDescriptionAsMap(description)
+                //[raw:catchall: 0104 0008 01 01 0040 00 70B3 00 00 0000 0B 01 0400, profileId:0104, clusterId:0008, 
+                //clusterInt:8, sourceEndpoint:01, destinationEndpoint:01, options:0040, messageType:00, dni:70B3, 
+                //isClusterSpecific:false, isManufacturerSpecific:false, manufacturerId:0000, command:0B, direction:01, data:[04, 00]]
+                log.debug "Not parsing cluster message $descMap , ${descMap.attrInt}"
+               
+               //ct  dim level to add
+                //0104 0008 01 01 0040 00 70B3 00 00 0000 0B 01 0400 
+            }
             else {
                 logDebug "Not parsing cluster message: $cluster"
+
             }
         }
     }
@@ -221,6 +233,10 @@ def updateColor(rgb) {
     def hsv = colorRgb2Hsv(rgb.red, rgb.green, rgb.blue)
     hsv.hue = Math.round(hsv.hue * 100).intValue()
     hsv.saturation = Math.round(hsv.saturation * 100).intValue()
+    
+    state.hue = hsv.hue
+    state.saturation = hsv.saturation
+    
     hsv.level = Math.round(hsv.level * 100).intValue()
     logTrace "updateColor: RGB ($hsv.hue, $hsv.saturation, $hsv.level)"
 
@@ -231,7 +247,7 @@ def updateColor(rgb) {
 
     def color = ColorUtils.rgbToHEX([rgb.red, rgb.green, rgb.blue])
     logTrace "updateColor: $color"
-
+    
     events += createEvent(name: "color", value: color, data: [ hue: hsv.hue, saturation: hsv.saturation, red: rgb.red, green: rgb.green, blue: rgb.blue, hex: color], displayed: false)
     events += createEvent(name: "hue", value: hsv.hue, displayed: false)
     events += createEvent(name: "saturation", value: hsv.saturation, displayed: false)
@@ -319,13 +335,18 @@ def intTo16bitUnsignedHex(value) {
 
 def setColor(value) {
     logDebug "setColor($value)"
+    if (value.hue == null) { value.hue = state.hue = state.hue }
+    if (value.saturation == null){ value.saturation = state.saturation}
+                                 
     def rgb = colorHsv2Rgb(value.hue / 100, value.saturation / 100)
 
     logTrace "setColor: RGB ($rgb.red, $rgb.green, $rgb.blue)"
     def xy = colorRgb2Xy(rgb.red, rgb.green, rgb.blue);
     logTrace "setColor: xy ($xy.x, $xy.y)"
 
-    def intX = Math.round(xy.x*65536).intValue() // 0..65279
+   // def intX = Math.round(xy.x*65536).intValue() // 0..65279
+ def intX =    Math.round(xy.x*75000).intValue()
+    //def intY = Math.round(xy.y*65536).intValue() // 0..65279
     def intY = Math.round(xy.y*65536).intValue() // 0..65279
 
     logTrace "setColor: xy ($intX, $intY)"
@@ -349,7 +370,7 @@ def setColor(value) {
     state.cmds += cmds
 
     unschedule(sendZigbeeCommands)
-    runInMillis(100, sendZigbeeCommands)
+    runInMillis(500, sendZigbeeCommands)
 }
 
 def setHue(hue) {
@@ -503,9 +524,9 @@ def colorXy2Rgb(x, y) {
 
     logTrace "< Color xy: ($x, $y)"
 
-    def Y = 1;
-    def X = (Y / y) * x;
-    def Z = (Y / y) * (1.0 - x - y);
+    def Y = 1 //;
+    def X = (Y / y) * x//;
+    def Z = (Y / y) * (1.0 - x - y)//;
 
     logTrace "< Color XYZ: ($X, $Y, $Z)"
 
