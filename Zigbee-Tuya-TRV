@@ -133,7 +133,7 @@ ArrayList<String> parse(String description) {
 //set point temp
                             case "0202": //set point temp
                                 //String SetPoint = HexUtils.hexStringToInt(data[9]) / 10
-                                String SetPoint = HexUtils.hexStringToInt(data[-1]) / 10
+                                String SetPoint = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
                                 logging("${device.displayName} Temp Set Point ${commandType}, data9 ${SetPoint}")
                                 sendEvent(name: "heatingSetpoint", value: SetPoint, unit: "C")
 	                            sendEvent(name: "thermostatSetpoint", value: SetPoint, unit: "C")
@@ -148,7 +148,7 @@ ArrayList<String> parse(String description) {
                             break
 //0302 Temparature                            
                             case '0302': //Temparature
-                                String temperature = HexUtils.hexStringToInt(data[9])/ 10
+                                String temperature = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
                                 logging("${device.displayName} Temp ${temperature}, data ${msgMap["data"]}")
                                 sendEvent(name: "temperature", value: temperature, unit: "C" )
                                 if (device.currentValue("thermostatMode") != "off" && temperature.toFloat() < device.currentValue("thermostatSetpoint").toFloat()) {
@@ -396,8 +396,11 @@ def setHeatingSetpoint(preciseDegrees) {
 	if (preciseDegrees != null) {
         def dp = "0202"
         def fn = "00"
-        def SP = preciseDegrees *10
-        def data = "04000000" + zigbee.convertToHexString(SP.intValue(), 2)
+        def SP = preciseDegrees * 10
+        def X = (SP / 256).intValue()
+        def Y = SP.intValue() % 256
+        
+        def data = "040000" + zigbee.convertToHexString(X.intValue(), 2) + zigbee.convertToHexString(Y.intValue(), 2)
 	    log.info "heating setpoint to ${preciseDegrees}"
 	    sendTuyaCommand(dp,fn,data)
 	}
