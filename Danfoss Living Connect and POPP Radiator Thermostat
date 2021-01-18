@@ -136,7 +136,7 @@ def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointRep
         if (logEnable) log.debug "off cool idle"
         eventList << createEvent(name: "thermostatMode", value: "off" )
         eventList << createEvent(name: "thermostatOperatingState", value: "idle")
-        updateDataValue("lastRunningMode", "cool")
+        //updateDataValue("lastRunningMode", "cool")
     }
     eventList << createEvent(name: "heatingSetpoint", value: radiatorTemperature, unit: getTemperatureScale(), descriptionText:discText)
 	eventList << createEvent(name: "thermostatSetpoint", value: radiatorTemperature, unit: getTemperatureScale(), descriptionText:discText)
@@ -348,6 +348,10 @@ def configure() {
     sendEvent(name: "thermostatFanMode", value: "off")
     
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat"] )
+//test    
+    sendEvent(name: "heatingSetpoint", value: "10")
+    sendEvent(name: "nextHeatingSetpoint", value: "10")
+//test end
     
     state.configrq = true
     state.lastClockSet = ""
