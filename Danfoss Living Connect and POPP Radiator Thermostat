@@ -320,6 +320,11 @@ def off() {
 
 def installed() {
 	log.debug "installed"
+    //prevent null point on first cycle
+    sendEvent(name: "heatingSetpoint", value: "10")
+    sendEvent(name: "nextHeatingSetpoint" ,value: "10")
+    //prevent null point on first cycle"
+    state.lastSentTemperature = "10"
     state.configrq = false
     state.lastClockSet = ""
     state.lastBatteryReportReceivedAt = ""
@@ -348,10 +353,6 @@ def configure() {
     sendEvent(name: "thermostatFanMode", value: "off")
     
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat"] )
-//test    
-    sendEvent(name: "heatingSetpoint", value: "10")
-    sendEvent(name: "nextHeatingSetpoint", value: "10")
-//test end
     
     state.configrq = true
     state.lastClockSet = ""
