@@ -13,6 +13,7 @@ metadata {
         capability "ThermostatCoolingSetpoint"
         capability "ThermostatSetpoint"
         capability "Refresh"
+        capability "Battery"
         
         attribute "valve", "String"
         attribute "WindowOpenDetection","String"
@@ -134,8 +135,8 @@ ArrayList<String> parse(String description) {
                             case "0202": //set point temp
 				String SetPoint = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
                                 logging("${device.displayName} Temp Set Point ${commandType}, data9 ${SetPoint}")
-                                sendEvent(name: "heatingSetpoint", value: SetPoint, unit: "C")
-	                            sendEvent(name: "thermostatSetpoint", value: SetPoint, unit: "C")
+                                sendEvent(name: "heatingSetpoint", value: SetPoint.toFloat(), unit: "C")
+	                            sendEvent(name: "thermostatSetpoint", value: SetPoint.toFloat(), unit: "C")
                                 if (device.currentValue("thermostatMode") != "off" && SetPoint.toFloat() > device.currentValue("temperature").toFloat()) { 
                                     sendEvent(name: "thermostatOperatingState", value: "heating")}
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
@@ -172,11 +173,32 @@ ArrayList<String> parse(String description) {
                             break
 // battery --- DEV
                             case '1502':
-                                String values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                //String values = data.collect{c -> HexUtils.hexStringToInt(c)}
                                 String batt = HexUtils.hexStringToInt(data[-1])
+                            state.batdev = batt //dv to see it it is ever peported
                                 logging("${device.displayName} battery ${batt}")
-                                sendEvent(name: "battery", value: batt, unit:"%" )
+                                sendEvent(name: "battery", value: batt, unit:"%", descriptionText: "reported from 1502")
+                            break
+                            case '6702':
+                                //String values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                String batt = (HexUtils.hexStringToInt(data[-1]).toFloat() /3) *10
+                                logging("${device.displayName} battery ${batt}")
+                                sendEvent(name: "battery", value: batt, unit:"%", descriptionText: "reported from 6702" )
                                 // 6702 - [68, 13, 103, 2, 0, 4, 0, 0, 0, 35] ?3.5 volt?
+                                // 6702 - [126, 162, 103, 2, 0, 4, 0, 0, 0, 30] ?3 volt?
+                            break
+                            
+                            case '0D05': // battery low warning
+                            String battminmax = HexUtils.hexStringToInt(data[-1])
+                            logging("${device.displayName} battery $data")
+                            if (battminmax == "0"){
+                                    if (device.currentValue("battery") == null || device.currentValue("battery") == 0 ) {
+                                        sendEvent(name: "battery", value: 100, unit:"%" )
+                                    }
+                            }
+                            else if (battminmax == "10" ||battminmax == "16"){//10 for low 
+                                sendEvent(name: "battery", value: 0, unit:"%", descriptionText: "battery value $battminmax" )
+                            }
                             break
                             
                             case '6D02': // Valve position
@@ -228,12 +250,21 @@ ArrayList<String> parse(String description) {
                             break
                             
                             case '7000': // schedule setting aka Auto mode -- Dev
-                            logging("${device.displayName} schedual P1 ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
+                                values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                logging("${device.displayName} schedual P1 ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
+                                state.SchduleP1 = "${values[6]}:${values[7]} = ${values[8]}deg , ${values[9]}:${values[10]} = ${values[11]}deg ,more ${values}"
+                            break
+                            case '7001': // schedule setting aka Auto mode -- Dev
+                                values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                logging("${device.displayName} schedual P2 ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
+                                state.SchduleP2 = "${values[6]}:${values[7]} = ${values[8]}deg , ${values[9]}:${values[10]} = ${values[11]}deg ,more ${values}"
+                            break
+                            case '7100': // schedule setting aka Auto mode -- Dev
+                                values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                logging("${device.displayName} schedual P3? ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
+                                state.SchduleP3 = "${values[6]}:${values[7]} = ${values[8]}deg , ${values[9]}:${values[10]} = ${values[11]}deg ,more ${values}"
                             break
                             
-                            case '7001': // schedule setting aka Auto mode -- Dev
-                                logging("${device.displayName} schedual P2 ${data[6]}:${data[7]} = ${data[8]}deg , ${data[9]}:${data[10]} = ${data[11]}deg ,more ${data} ")
-                            break
 // 0x7502 away preset number of days                            
                             case '7502':
                             logging("${device.displayName} away preset number of days ${HexUtils.hexStringToInt(data[-1])} ")
