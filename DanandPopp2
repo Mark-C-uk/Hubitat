@@ -1,0 +1,427 @@
+/*
+Danfoss Living Connect and POPP Radiator Thermostat
+*/
+ 
+ 
+metadata {
+	definition (name: "2Danfoss Living Connect and POPP Radiator Thermostat", namespace: "Mark-C-uk", author: "mark C") {
+        capability "Actuator"
+        capability "Sensor"
+	capability "Thermostat"
+	capability "Battery"
+	capability "Configuration"
+
+    	attribute "nextHeatingSetpoint", "number"
+        attribute "lastseen", "string"
+        attribute "lastRunningMode", "string"
+
+        //Danfoss POPP
+        fingerprint type: "0804", mfr: "0002", prod: "0115", model: "A010", cc: "80,46,81,72,8F,75,31,43,86,84,40", ccOut:"46,81,8F,75,86,84,72,80,56,40 " //8f last
+        //Danfoss Living Connect Radiator Thermostat LC-13
+        fingerprint type: "0804", mfr: "0002", prod: "0005", model: "0004", cc: "80,46,81,72,8F,75,43,86,84", ccOut:"46,81,8F"
+/*
+	0x80 = Battery v1                   	0x46 = Climate Control Schedule v1			0x81 = Clock v1
+        0x72 = Manufacturer Specific v1     	0x8F = Multi Cmd v1 (Multi Command Encapsulated)	0x75 = Protection v2
+    	0x31 V2 0x31 Sensor Multilevel		0x43 = Thermostat Setpoint v2				0x86 = Version v1
+	0x84 = Wake Up v2
+*/        
+	}
+	preferences {
+		input "wakeUpIntervalInMins", "number", title: "Wake Up Interval (min). Default 5mins.", description: "Wakes up and send\receives new temperature setting", range: "1..30", displayDuringSetup: true
+		input "quickOnTemperature", "number", title: "Quick On Temperature. Default 21°C.", description: "Quickly turn on the radiator to this temperature", range: "5..82", displayDuringSetup: false
+		input "quickOffTemperature", "number", title: "Quick Off Temperature. Default 4°C.", description: "Quickly turn off the radiator to this temperature", range: "4..68", displayDuringSetup: false
+        input "logEnable", "bool", title: "Enable debug logging", defaultValue: true
+	}
+}
+
+def logsOff(){
+    log.warn "debug logging disabled..."
+    device.updateSetting("logEnable",[value:"false",type:"bool"])
+}
+def updated(){
+    log.info "${device.displayName} updated..."
+	configure()
+}   
+def parse(String description) {
+	if (logEnable) log.info "PARSED $description"
+	def result = null
+	def cmd = zwave.parse(description)
+	if (cmd) {
+		result = zwaveEvent(cmd)
+		if (logEnable) log.info "${device.displayName} - Parsed '${cmd}'" // to ${result.inspect()}" //result.inspect shows all the decoded details removed to keep debugin tidye
+	}
+	else {
+		log.warn "Non-parsed event: ${description} - cmd = '${cmd}'"
+	}
+	return result
+}
+
+def zwaveEvent(hubitat.zwave.Command cmd) { //	catch all unhandled events
+	log.warn "Uncaptured/unhandled event for ${device.displayName}: ${cmd} to ${result.inspect()} and ${cmd.toString()}"
+	//return createEvent(descriptionText: "Uncaptured event for ${device.displayName}: ${cmd}")
+}
+def zwaveEvent(hubitat.zwave.commands.climatecontrolschedulev1.ScheduleOverrideReport cmd) {
+	if (logEnable) log.debug "Not processed - Schedule Override Report ${device.displayName} ${cmd} "
+}
+def zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalReport cmd) {
+	if (logEnable) log.debug "Not processed - Wake Up Interval Report recived: ${cmd.toString()}"
+}
+def zwaveEvent(hubitat.zwave.commands.protectionv2.ProtectionReport cmd) {
+	if (logEnable) log.debug "Not implmented YET manual control lock - Protection Report recived: ${cmd.toString()}"
+}
+def zwaveEvent(hubitat.zwave.commands.versionv1.VersionReport cmd) {
+	if (logEnable) log.debug "Not processed - Version Command Class Report recived: ${cmd.toString()}"
+} 
+/*
+def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	if (logEnable) log.debug "manufacturer specific Report recived: ${cmd.toString()}"
+}
+*/
+def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	if (cmd.manufacturerName) {
+		updateDataValue("manufacturer", cmd.manufacturerName)
+	}
+	if (cmd.productTypeId) {
+		updateDataValue("productTypeId", cmd.productTypeId.toString())
+	}
+	if (cmd.productId) {
+		updateDataValue("productId", cmd.productId.toString())
+        state.productId = cmd.productId.toString()
+	}
+    if (logEnable) log.debug "ManufacturerSpecificReport -- ${cmd}"
+}
+
+def zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalCapabilitiesReport cmd) { // dont actualy do anything with this message
+	if (logEnable) log.debug "Not processed - Wake Up Interval Capabilities Report recived: ${cmd.toString()}"
+}
+
+def zwaveEvent(hubitat.zwave.commands.thermostatsetpointv2.ThermostatSetpointReport cmd) {
+    //log.info "${device.displayName} - $cmd"
+	state.scale = cmd.scale	// So we can respond with same format later, see setHeatingSetpoint()
+	state.precision = cmd.precision
+
+	def eventList = []
+	def cmdScale = cmd.scale == 1 ? "F" : "C"
+	def radiatorTemperature = Double.parseDouble(convertTemperatureIfNeeded(cmd.scaledValue, cmdScale, cmd.precision)).round(1) //reported setpoint
+	//def currentTemperature = currentDouble("heatingSetpoint")	//current app setpoint
+	//def nextTemperature = currentDouble("nextHeatingSetpoint")	// app next setpoint
+	def currentTemperature = device.currentValue("heatingSetpoint").doubleValue()	//current app setpoint
+	def nextTemperature = device.currentValue("nextHeatingSetpoint").doubleValue()
+    if (logEnable) log.debug "${device.displayName} - setpoint report temps device rep = $radiatorTemperature , next = $nextTemperature"
+    def discText = ""
+        
+	if(radiatorTemperature != currentTemperature){
+        if(state.lastSentTemperature == radiatorTemperature) {
+			discText = "Temperature changed by app to ${radiatorTemperature}°" + getTemperatureScale() + "."
+        	log.info "${device.displayName} - ThermostatSetpointReport - '${discText}'"
+        }
+		else {
+        	discText = "Temperature changed manually to ${radiatorTemperature}°" + getTemperatureScale() + "."
+			log.info "${device.displayName} - ThermostatSetpointReport -'${discText}'"
+			state.lastSentTemperature = radiatorTemperature
+            eventList << createEvent(name:"nextHeatingSetpoint", value: state.lastSentTemperature, unit: getTemperatureScale())
+		}
+	}
+    if (state.productId == "4") { //if device (4) dosent report temp
+        eventList << createEvent(name: "temperature", value: radiatorTemperature, , descriptionText: "fake temp" )
+        //log.debug "${device.displayName} device type 4 dosent report - temp fake temp"
+    }
+    if(radiatorTemperature > (quickOffTemperature ?: fromCelsiusToLocal(4))) { //if on
+        if (logEnable) log.debug "on heat"
+        eventList << createEvent(name: "lastRunningMode",value: "heat")
+        eventList << createEvent(name: "thermostatMode", value: "heat" )
+        updateDataValue("lastRunningMode", "heat")
+    }
+    else { // off
+        if (logEnable) log.debug "off cool idle"
+        eventList << createEvent(name: "thermostatMode", value: "off" )
+        eventList << createEvent(name: "thermostatOperatingState", value: "idle")
+        //updateDataValue("lastRunningMode", "cool")
+    }
+    eventList << createEvent(name: "heatingSetpoint", value: radiatorTemperature, unit: getTemperatureScale(), descriptionText:discText)
+	eventList << createEvent(name: "thermostatSetpoint", value: radiatorTemperature, unit: getTemperatureScale(), descriptionText:discText)
+    
+	return eventList
+}
+
+//Recives the actual temperature from the TRV.
+def zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd) {
+    if (logEnable) log.info "${device.displayName} - $cmd"
+	def events = []
+	if (cmd.sensorType == 0x01) {
+		def reportedTemperatureValue = cmd.scaledSensorValue
+		def reportedTemperatureUnit = cmd.scale == 1 ? "F" : "C"
+		def convertedTemperatureValue = convertTemperatureIfNeeded(reportedTemperatureValue, reportedTemperatureUnit, 2)
+		def descriptionText = "temperature was $convertedTemperatureValue °" + getTemperatureScale() + "." 
+		state.temperature = convertedTemperatureValue
+		events << createEvent(name: "temperature", value: state.temperature, descriptionText: "$descriptionText")
+	}
+ 
+    if (state.temperature.toFloat() < state.lastSentTemperature.toFloat()){ //device.currentValue("thermostatSetpoint")
+        if (logEnable) log.debug  "Actual temp lower than setpoint HEATING"
+        events << createEvent(name: "thermostatOperatingState", value: "heating")
+    }
+    else{
+       if (logEnable) log.debug  " Actual temp greater than setpoint IDLE"
+       events << createEvent(name: "thermostatOperatingState", value: "idle")
+    }
+    
+    return events
+}
+
+def zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd) {
+//log.debug "Wakey wakey zwaveEvent ${cmd}"
+    def event = []
+    def cmds = []
+	def nowtime = now()
+    def nowtimeplus = nowtime + ((wakeUpIntervalInMins ?: 5) * 60 * 1000)
+    def nowtimeplusdate = new Date(nowtimeplus)
+    state.ComCount = 0
+
+    event << createEvent(name: "lastseen" , value: "${new Date().format("dd-MM-yy HH:mm")} Next Expected ${nowtimeplusdate.format('HH:mm')}")
+
+//battery
+	if (!state.lastBatteryReportReceivedAt || (new Date().time) - state.lastBatteryReportReceivedAt > daysToTime(7)) {
+		log.trace "WakeUp - Asking for battery report as over 7 days since"
+		state.ComCount =  state.ComCount + 1
+        state.ComBat = true
+	}
+//time
+    if (!state.lastClockSet || (new Date().time) - state.lastClockSet > daysToTime(7)) {
+        log.trace "WakeUp - Updating Clock as 7 days since - clock details state = '${state.lastClockSet}' and new date ${new Date().time}"
+        state.ComCount =  state.ComCount + 1
+        state.ComClock = true
+	}
+// wake up intval
+    if (state.configrq == true) {
+    	log.trace "WakeUp - Sending - wakeUpIntervalSet='${state.wakeUpEvery}'s or '${state.wakeUpEvery/60}'min, this normally takes a full cycle to come into effect"
+    	state.ComCount =  state.ComCount + 6
+        state.ComWake = true
+        state.configrq = false
+    }
+// temp setpoint
+    //def nextHeatingSetpoint = currentDouble("nextHeatingSetpoint")
+	//def heatingSetpoint = currentDouble("heatingSetpoint")
+        
+    def nextHeatingSetpoint = device.currentValue("nextHeatingSetpoint").doubleValue()	//current app setpoint
+	def heatingSetpoint = device.currentValue("heatingSetpoint").doubleValue()
+
+	if (nextHeatingSetpoint != 0 && nextHeatingSetpoint != heatingSetpoint) {
+		log.trace "WakeUp - Sending new temperature ${nextHeatingSetpoint}, curent heating setpoint ${heatingSetpoint}"
+		state.lastSentTemperature = nextHeatingSetpoint
+        state.ComSetTemp = true
+        state.ComCount =  state.ComCount + 2
+	}
+
+    state.ComCount =  state.ComCount + 1 // for no more info
+	
+    if (state.ComBat == true){
+    	cmds << zwave.batteryV1.batteryGet().format()
+    	state.ComBat = false
+    }
+    if (state.ComClock == true){
+    	cmds << currentTimeCommand()
+        state.ComClock = false
+    }
+    if (state.ComWake == true){
+    	cmds << zwave.manufacturerSpecificV2.manufacturerSpecificGet().format()
+        cmds << zwave.versionV1.versionGet().format()
+    	cmds << zwave.protectionV1.protectionGet().format()
+        cmds << zwave.wakeUpV2.wakeUpIntervalCapabilitiesGet().format()
+    	cmds << zwave.wakeUpV1.wakeUpIntervalSet(seconds:state.wakeUpEvery, nodeid:zwaveHubNodeId).format()
+        //cmds << "delay 1500"
+        cmds << zwave.wakeUpV1.wakeUpIntervalGet().format()
+        state.ComWake = false
+    }
+    if (state.ComSetTemp == true){
+		cmds << setHeatingSetpointCommand(nextHeatingSetpoint).format()
+        //cmds << "delay 1500"
+		cmds << zwave.thermostatSetpointV1.thermostatSetpointGet(setpointType: 1).format()
+        state.ComSetTemp = false
+	}
+    
+    cmds << zwave.wakeUpV2.wakeUpNoMoreInformation().format()
+
+    log.trace "${device.displayName} - WakeUp - outbound commands are ${cmds}, command count is $state.ComCount"
+    state.ComCount = 0
+  	    
+   return [event, response(delayBetween(cmds, 700))] //was 1s or 1000 2500
+}
+
+def zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
+    if (logEnable) log.info "${device.displayName} - $cmd"
+	def map = [ name: "battery", unit: "%" ]
+	if (cmd.batteryLevel == 0xFF) {  // Special value for low battery alert
+		map.value = 1
+		map.descriptionText = "Low Battery"
+	} 
+    else {
+		map.value = cmd.batteryLevel
+	}
+	state.lastBatteryReportReceivedAt = new Date().time	// Store time of last battery update so we don't ask every wakeup, see WakeUpNotification handler
+    return createEvent(map)
+}
+
+def currentTimeCommand() {
+    def nowCalendar = Calendar.getInstance(location.timeZone)
+    def weekday = nowCalendar.get(Calendar.DAY_OF_WEEK) - 1
+    if (weekday == 0) {
+        weekday = 7
+    }
+    log.debug "currentTimeCommand Setting clock to hour='${nowCalendar.get(Calendar.HOUR_OF_DAY)}', minute='${nowCalendar.get(Calendar.MINUTE)}', DayNum='${weekday}'"
+    state.lastClockSet = new Date().time // Store time of last time update so we only send once a week, see WakeUpNotification handler
+	return zwave.clockV1.clockSet(hour: nowCalendar.get(Calendar.HOUR_OF_DAY), minute: nowCalendar.get(Calendar.MINUTE), weekday: weekday).format()
+}
+
+
+def thermostatTemperatureSetpoint(temp){
+    log.debug "GH set therm temp $temp"
+    return setHeatingSetpoint(temp)
+}
+//	this enables a cooling temparture to be in Apps but sends to setThermostat Heating Setpoint
+def setCoolingSetpoint(temp){
+	log.debug "setCoolingSetpoint - temp of '${temp}', sending temp value to setHeatingSetpoint"
+	return setHeatingSetpoint(temp)
+}
+//def setHeatingSetpoint(degrees) {
+//log.debug "setHeatingSetpoint(just degrees) - Storing temperature for next wake ${degrees}"
+//	setHeatingSetpoint(degrees.toDouble())
+//}
+def setHeatingSetpoint(Double degrees) {
+	log.debug "setHeatingSetpoint(Double deg) - Storing temperature for next wake ${degrees}"
+	return sendEvent(name:"nextHeatingSetpoint", value: degrees.round(1), unit: getTemperatureScale())
+}
+def setHeatingSetpointCommand(Double degrees) {
+	log.trace "setHeatingSetpointCOMMAND(DD) setting to '${degrees}'"
+	def deviceScale = state.scale ?: 0
+	def deviceScaleString = deviceScale == 1 ? "F" : "C"
+	def locationScale = getTemperatureScale()
+	def precision = state.precision ?: 2
+	def convertedDegrees
+	if (locationScale == "C" && deviceScaleString == "F") {
+		convertedDegrees = celsiusToFahrenheit(degrees)
+	} 
+    else if (locationScale == "F" && deviceScaleString == "C") {
+		convertedDegrees = fahrenheitToCelsius(degrees)
+	}
+    else {
+		convertedDegrees = degrees
+	}
+	return zwave.thermostatSetpointV1.thermostatSetpointSet(setpointType: 1, scale: deviceScale, precision: precision, scaledValue: convertedDegrees)
+}
+
+def on() {
+    return setHeatingSetpoint(quickOnTemperature ?: fromCelsiusToLocal(21))
+}
+
+def off() {
+	return setHeatingSetpoint(quickOffTemperature ?: fromCelsiusToLocal(4))
+}
+
+def installed() {
+	log.debug "installed"
+    //prevent null point on first cycle
+    sendEvent(name: "heatingSetpoint", value: "10")
+    sendEvent(name: "nextHeatingSetpoint" ,value: "10")
+    //prevent null point on first cycle"
+    state.lastSentTemperature = "10"
+    state.configrq = false
+    state.lastClockSet = ""
+    state.lastBatteryReportReceivedAt = ""
+    log.debug "installed finished - wakeUpIntervalSet to 300"
+	delayBetween([
+  		zwave.configurationV1.configurationSet(parameterNumber:1, size:2, scaledConfigurationValue:100).format(),	// not sure if needed
+    	zwave.thermostatSetpointV1.thermostatSetpointGet(setpointType: 1).format(),		//	Get it's configured info, like it's scale (Celsius, Farenheit) Precicsion // 1 = SETPOINT_TYPE_HEATING_1
+    	zwave.associationV1.associationSet(groupingIdentifier:1, nodeId:[zwaveHubNodeId]).format(),
+  		currentTimeCommand(), 															// Set it's time/clock. Do we need to do this periodically, like the battery check?
+		zwave.wakeUpV1.wakeUpIntervalSet(seconds:300, nodeid:zwaveHubNodeId).format() 	// Make sure sleepy battery-powered sensor sends its UpNotifications to the hub every 5 mins intially
+	], 1000)
+}
+//// set all attributes up hear ////
+def configure() {
+    unschedule()
+	def wakeUpEvery = (wakeUpIntervalInMins ?: 5) * 60
+    log.debug "prodID - ${state.productId}"
+	if (state.productId == "4") {
+        log.trace "device dose not report temp"
+	}
+
+    sendEvent(name:"minHeatingSetpoint", value: "4", unit: "°C", displayed: false)
+	sendEvent(name:"maxHeatingSetpoint", value: "28", unit: "°C", displayed: false)
+    
+    sendEvent(name: "supportedThermostatFanModes", value: ["off"])
+    sendEvent(name: "thermostatFanMode", value: "off")
+    
+    sendEvent(name: "supportedThermostatModes", value: ["off", "heat"] )
+    
+    state.configrq = true
+    state.lastClockSet = ""
+    state.wakeUpEvery = wakeUpEvery
+    log.info "${device.displayName} - Configure storing wakeUpInterval for next wake '$state.wakeUpEvery'seconds AND configuration flag is $state.configrq"
+    log.warn "debug logging is: ${logEnable == true}"
+	if (logEnable) runIn(1800,logsOff)
+}
+
+def daysToTime(days) { // used during wake up to calculate '7' day to time
+	return days*24*60*60*1000
+}
+
+def fromCelsiusToLocal(Double degrees) {
+	if(getTemperatureScale() == "F") {
+		return celsiusToFahrenheit(degrees)
+	}
+	else {
+		return degrees
+	}
+}
+
+
+def currentDouble(attributeName) {
+    log.debug " cirnt doub $attributeName"
+	if(device.currentValue(attributeName)) {
+        log.debug "curent doble used ${device.currentValue(attributeName).doubleValue()}"
+		return device.currentValue(attributeName).doubleValue()
+	}
+	else {
+        log.debug " count double ret 13"
+		return 0d
+	}
+}
+/// misc stuff
+def heat() {
+	return setHeatingSetpoint(quickOnTemperature ?: fromCelsiusToLocal(21))
+}
+def cool() {
+	return setHeatingSetpoint(quickOffTemperature ?: fromCelsiusToLocal(4))
+}
+def emergencyHeat() {
+	return setHeatingSetpoint(fromCelsiusToLocal(10))
+}
+def setThermostatMode(mode){
+    def cmds = []
+    log.debug "set mode $mode" 
+	if (mode == "on" || mode == "heat" || mode == "auto") { 
+        cmds <<  setHeatingSetpoint(quickOnTemperature ?: fromCelsiusToLocal(21))
+        cmds << sendEvent(name: "thermostatMode", value: "heat" )
+    }
+    else if (mode == "off") { 
+        cmds <<  setHeatingSetpoint(quickOffTemperature ?: fromCelsiusToLocal(4))
+        cmds << sendEvent(name: "thermostatMode", value: "off" )
+    }
+    else if (mode == "emergency heat") {
+        cmds <<  setHeatingSetpoint(fromCelsiusToLocal(10))
+        cmds << sendEvent(name: "thermostatMode", value: "boost" )
+    }
+    else { 
+        log.warn "unknow mode $mode" 
+    }
+    //"rush hour" ??
+    //if (mode == "cool" || mode == "eco") { ecoheat() }
+	log.debug "set mode $mode"
+    return cmds
+}
+def fanOn() { log.warn "no fan" }
+def fanAuto() { log.warn "no fan" }
+def fanCirculate() { log.warn "no fan" }
+def setThermostatFanMode(mode) { log.warn "no fan" }
+def auto() { setThermostatMode(heat) }
