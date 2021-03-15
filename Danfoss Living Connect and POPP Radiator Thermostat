@@ -4,12 +4,12 @@ Danfoss Living Connect and POPP Radiator Thermostat
  
  
 metadata {
-	definition (name: "Danfoss Living Connect and POPP Radiator Thermostat", namespace: "Mark-C-uk", author: "mark C") { //, ocfDeviceType: "oic.d.thermostat")
+	definition (name: "Danfoss Living Connect and POPP Radiator Thermostat", namespace: "Mark-C-uk", author: "mark C") {
         capability "Actuator"
         capability "Sensor"
-		capability "Thermostat"
-		capability "Battery"
-		capability "Configuration"
+	capability "Thermostat"
+	capability "Battery"
+	capability "Configuration"
 
     	attribute "nextHeatingSetpoint", "number"
         attribute "lastseen", "string"
@@ -20,10 +20,10 @@ metadata {
         //Danfoss Living Connect Radiator Thermostat LC-13
         fingerprint type: "0804", mfr: "0002", prod: "0005", model: "0004", cc: "80,46,81,72,8F,75,43,86,84", ccOut:"46,81,8F"
 /*
-		 0x80 = Battery v1                   0x46 = Climate Control Schedule v1                  0x81 = Clock v1
-         0x72 = Manufacturer Specific v1     0x8F = Multi Cmd v1 (Multi Command Encapsulated)    0x75 = Protection v2
-    	 0x31 V2 0x31 Sensor Multilevel		 0x43 = Thermostat Setpoint v2                   	 0x86 = Version v1
-		 0x84 = Wake Up v2
+	0x80 = Battery v1                   	0x46 = Climate Control Schedule v1			0x81 = Clock v1
+        0x72 = Manufacturer Specific v1     	0x8F = Multi Cmd v1 (Multi Command Encapsulated)	0x75 = Protection v2
+    	0x31 V2 0x31 Sensor Multilevel		0x43 = Thermostat Setpoint v2				0x86 = Version v1
+	0x84 = Wake Up v2
 */        
 	}
 	preferences {
@@ -420,13 +420,8 @@ def setThermostatMode(mode){
 	log.debug "set mode $mode"
     return cmds
 }
-def fanOn() {
-}
-def fanAuto() {
-}
-def fanCirculate() {
-}
-def setThermostatFanMode(mode) {
-}
-def auto() {
-}
+def fanOn() { log.warn "no fan" }
+def fanAuto() { log.warn "no fan" }
+def fanCirculate() { log.warn "no fan" }
+def setThermostatFanMode(mode) { log.warn "no fan" }
+def auto() { setThermostatMode(heat) }
