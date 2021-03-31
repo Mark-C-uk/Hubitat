@@ -1,5 +1,5 @@
 /**
- *  Date: 2020-12-01
+ *  Date: 2021-03-31
  */
 
 import hubitat.helper.HexUtils
@@ -21,6 +21,8 @@ metadata {
         attribute "childLock","String"
         
     fingerprint endpointId: "01", profileId: "0104", inClusters: "0000,0004,0005,EF00", outClusters: "0019,000A", manufacturer: "_TZE200_ckud7u2l", model: "TS0601", deviceJoinName: "Zigbee - Tuya TRV" 
+    // Moes TRV
+    fingerprint endpointId: "01", profileId: "0104", inClusters: "0000,000A,0004,0005,EF00", outClusters: "0019", manufacturer: "_TZE200_zion52ef", model: "TS0601", deviceJoinName: "Zigbee - Tuya TRV"
 }
     
     preferences {
@@ -133,28 +135,39 @@ ArrayList<String> parse(String description) {
                         switch(commandType){
 //set point temp
                             case "0202": //set point temp
-				String SetPoint = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
-                                logging("${device.displayName} Temp Set Point ${commandType}, data9 ${SetPoint}")
+                                String SetPoint = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
+                                logging("${device.displayName} Temp Set Point ${SetPoint}, data ${msgMap["data"]}")
                                 sendEvent(name: "heatingSetpoint", value: SetPoint.toFloat(), unit: "C")
-	                            sendEvent(name: "thermostatSetpoint", value: SetPoint.toFloat(), unit: "C")
+                                sendEvent(name: "thermostatSetpoint", value: SetPoint.toFloat(), unit: "C")
                                 if (device.currentValue("thermostatMode") != "off" && SetPoint.toFloat() > device.currentValue("temperature").toFloat()) { 
                                     sendEvent(name: "thermostatOperatingState", value: "heating")}
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
+                            break
+                            case "1002": // Moes setpoint
+                                String SetPoint = HexUtils.hexStringToInt("${data[-1]}") / 2
+                                logging("${device.displayName} Temp Set Point ${SetPoint}, data ${msgMap["data"]}")
+                                sendEvent(name: "heatingSetpoint", value: SetPoint.toFloat(), unit: "C")
+                                sendEvent(name: "thermostatSetpoint", value: SetPoint.toFloat(), unit: "C")
                             break
 //7202 away preset temperature
                             case "0702": //0x7202 away/off preset temperature
                                 String SetPoint = HexUtils.hexStringToInt(data[9]) / 10
                                 logging("${device.displayName} AWAY Temp Set Point ${commandType}, data9 ${SetPoint}")
                             break
-//0302 Temparature                            
-                            case '0302': //Temparature
-				String temperature = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
+//0302 Temperature
+                            case '0302': //Temperature
+                                String temperature = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
                                 logging("${device.displayName} Temp ${temperature}, data ${msgMap["data"]}")
                                 sendEvent(name: "temperature", value: temperature, unit: "C" )
                                 if (device.currentValue("thermostatMode") != "off" && temperature.toFloat() < device.currentValue("thermostatSetpoint").toFloat()) {
                                     sendEvent(name: "thermostatOperatingState", value: "heating")}
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
-                                break
+                            break
+                            case '1802': //Moes Temperature
+                                String temperature = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
+                                logging("${device.displayName} Temp ${temperature}, data ${msgMap["data"]}")
+                                sendEvent(name: "temperature", value: temperature, unit: "C" )
+                            break
 // Mode                            
                             case '0404': // Mode
                                 String mode = HexUtils.hexStringToInt(data[6])
@@ -168,6 +181,21 @@ ArrayList<String> parse(String description) {
                                     break
                                     case '2':
                                         sendEvent(name: "thermostatMode", value: "heat" )
+                                    break
+                                }
+                            break
+                            case "0204": //Moes Mode
+                            String mode = HexUtils.hexStringToInt(data[6])
+                                logging("${device.displayName} mode Code=${mode}")
+                                switch (mode){
+                                    case '2':
+                                        sendEvent(name: "thermostatMode", value: "off" , descriptionText:"Holiday Mode")
+                                    break
+                                    case '0':
+                                        sendEvent(name: "thermostatMode", value: "auto" , descriptionText:"Using internally programmed schedule")
+                                    break
+                                    case '1':
+                                        sendEvent(name: "thermostatMode", value: "heat" , descriptionText:"Manual Mode")
                                     break
                                 }
                             break
@@ -200,7 +228,9 @@ ArrayList<String> parse(String description) {
                                 sendEvent(name: "battery", value: 0, unit:"%", descriptionText: "battery value $battminmax" )
                             }
                             break
-                            
+                            case "2202": //Moes Low battery warning? -- Dev
+                                logging("${device.displayName} Unknown Moes ${commandType} , data ${msgMap["data"]}")
+                            break
                             case '6D02': // Valve position
                                 String valve = HexUtils.hexStringToInt(data[-1])
                                 logging("${device.displayName} valve position ${valve}")
@@ -278,7 +308,7 @@ ArrayList<String> parse(String description) {
                     }
                     else { 
                         // found data in map of, data:[02, 19]], data:[00, 00]]
-                        //logging("other cluster EF00 but map null- ${msgMap}", 100)
+                        //logging("other cluster EF00 but map null- ${data}")
                     }
                     break
                 
@@ -348,7 +378,16 @@ private boolean logging(message) {
 //end markus toobox ////////////////////
 
 
-
+boolean isMoesModel(String manufacturer=null) {
+    manufacturer = manufacturer != null ? manufacturer : getDeviceDataByName('manufacturer')
+    switch(manufacturer) {
+        case "_TZE200_zion52ef":
+            return true
+            break
+        default:
+            return false
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -402,6 +441,11 @@ def off() { // this is away setting heat point
     def dp = "0404"
     def fn = "0001"
     def data = "00" // off
+    if(isMoesModel() == true)
+    {
+        dp = "0204"
+        data = "02" // off
+    }
 	log.info "Off command, this is away setting heat point"
     sendTuyaCommand(dp,fn,data)
 }
@@ -410,16 +454,28 @@ def heat() { //manual and hubitat control
     def dp = "0404"
     def fn = "0001"
     def data = "02" // on
+    if(isMoesModel() == true)
+    {
+        dp = "0204"
+        data = "01" // on
+    }
 	log.info "On/heat/manual command"
     sendTuyaCommand(dp,fn,data)
 }
 
 def auto() {
-    def dp = "0404"
-    def fn = "0001"
-    def data = "01" // auto mode, internal schdual
-	log.info "auto mode, internal schdual command ${zigbee.convertToHexString(rand(256), 2)}${dp}${fn}${data}"
-	sendTuyaCommand(dp,fn,data)
+    if(isMoesModel() == true)
+    {
+        log.info "Auto mode is not available for Moes TRV. => Defaulting to heat mode instead."
+        heat()
+    }
+    else{
+        def dp = "0404"
+        def fn = "0001"
+        def data = "01" // auto mode, internal schdual
+        log.info "auto mode, internal schdual command ${zigbee.convertToHexString(rand(256), 2)}${dp}${fn}${data}"
+        sendTuyaCommand(dp,fn,data)
+    }
 }
 
 def setHeatingSetpoint(preciseDegrees) {
@@ -429,6 +485,13 @@ def setHeatingSetpoint(preciseDegrees) {
         def SP = preciseDegrees *10
         def X = (SP / 256).intValue()
         def Y = SP.intValue() % 256
+
+        if(isMoesModel() == true)
+        {
+            dp = "1002"
+            SP = preciseDegrees *2
+            log.info "Moes Model"
+        }
 
         def data = "040000" + zigbee.convertToHexString(X.intValue(), 2) + zigbee.convertToHexString(Y.intValue(), 2)
 	    log.info "heating setpoint to ${preciseDegrees}"
