@@ -1,0 +1,48 @@
+definition(
+    name: "Notify No Events",
+    namespace: "hubitat",
+    author: "Bruce Ravenel",
+    description: "Notify when no event",
+    category: "Convenience",
+    iconUrl: "",
+    iconX2Url: "")
+
+preferences {
+	page(name: "mainPage")
+}
+
+def mainPage() {
+	dynamicPage(name: "mainPage", title: " ", install: true, uninstall: true) {
+		section {
+			input "thisName", "text", title: "Name this notifier", submitOnChange: true
+			if(thisName) app.updateLabel("$thisName")
+			input "meters", "capability.powerMeter", title: "Select Power Meters", submitOnChange: true, required: true, multiple: true
+			input "period", "number", title: "Enter number of minutes to wait", range: "0..*", submitOnChange: true, required: true
+			input "notify", "capability.notification", title: "Select Notification Device", submitOnChange: true, required: true
+		}
+	}
+}
+
+def installed() {
+	initialize()
+}
+
+def updated() {
+	unsubscribe()
+	unschedule()
+	initialize()
+}
+
+def initialize() {
+	subscribe(meters, "power", handler)
+	runIn(period * 60, timeUp)
+}
+
+def handler(evt) {
+	unschedule()
+	runIn(period * 60, timeUp)
+}
+
+def timeUp() {
+	notify.deviceNotification("No event for $period minutes from $meters")
+}
