@@ -56,7 +56,7 @@ private getSETDATA() { 0x00 }
 // Parse incoming device messages to generate events
 def parse(String description) {
 	if (description?.startsWith('catchall:') || description?.startsWith('read attr -')) {
-		Map descMap = zigbee.parseDescriptionAsMap(description)
+		def Map descMap = zigbee.parseDescriptionAsMap(description)
         //if(logEnable) log.debug "Pasred Map $descMap"
 		if (descMap?.clusterInt==CLUSTER_TUYA) {
 			if ( descMap?.command == "01" || descMap?.command == "02" ) {
@@ -97,8 +97,7 @@ def parse(String description) {
                     
 					case 515: // 0x03: Arrived at position
                     	def pos = zigbee.convertHexToInt(descMap.data[9])
-                        if(logEnable) log.debug description
-                    	log.info "arrived at position :"+pos
+                        if(logEnable) log.debug "${device.displayName} arrived at position:$pos , desc:$description"
                     	levelEventArrived(pos)
                         break;
                     
@@ -115,9 +114,9 @@ def parse(String description) {
 
 private levelEventMoving(currentLevel) {
 	def lastLevel = device.currentValue("level")
-	if(logEnable) log.debug "levelEventMoving - currentLevel: ${currentLevel} lastLevel: ${lastLevel}"
+	if(logEnable) log.debug "${device.displayName} levelEventMoving - currentLevel: ${currentLevel} lastLevel: ${lastLevel}"
 	if (lastLevel == "undefined" || currentLevel == lastLevel) { //Ignore invalid reports
-		log.debug "Ignore invalid reports"
+		log.debug "${device.displayName} Ignore invalid reports"
 	} else {
 		if (lastLevel < currentLevel) {
 			sendEvent([name:"windowShade", value: "opening"])
@@ -128,16 +127,23 @@ private levelEventMoving(currentLevel) {
 }
 
 private levelEventArrived(level) {
-	if (level == 0) {
-    	sendEvent(name: "windowShade", value: "closed")
-    } else if (level == 100) {
-    	sendEvent(name: "windowShade", value: "open")
-    } else if (level > 0 && level < 100) {
-		sendEvent(name: "windowShade", value: "partially open")
-    } else {
-    	sendEvent(name: "windowShade", value: "unknown")
-        //return
+    //debunce start when in revers mode time in mill's
+    def nowtime = now()
+    if (nowtime-200 <= state.lastmsg){
+        def diff = nowtime-state.lastmsg
+        def nowtimeform = new Date(nowtime)
+        def stateform = new Date(state.lastmsg)
+        def diffform = new Date(diff)
+        state.lastmsg = nowtime
+        log.warn "${device.displayName} debouced level = $level, nowtime = ${nowtimeform.format('HH:mm: ss: SSS')}, lastmsg = ${stateform.format('HH:mm: ss: SSS')} differance ${diffform.format('SSS')} millisecondes"
     }
+    state.lastmsg = nowtime
+    //debunce end
+	if (level == 0) { sendEvent(name: "windowShade", value: "closed")} 
+    else if (level == 100) { sendEvent(name: "windowShade", value: "open")} 
+    else if (level > 0 && level < 100) { sendEvent(name: "windowShade", value: "partially open")} 
+    else { sendEvent(name: "windowShade", value: "unknown")}
+    
     sendEvent(name: "level", value: (level))
     sendEvent(name: "position", value: (level))
     //To enable in GoggleHome
@@ -148,20 +154,22 @@ private levelEventArrived(level) {
 def close() {
 	if(logEnable) log.info "close()"
 	def currentLevel = device.currentValue("level")
-    if (currentLevel == 0) {
+/*    if (currentLevel == 0) {
     	sendEvent(name: "windowShade", value: "closed")
         return
     }
+*/
 	sendTuyaCommand("0104", "00", "0102")
 }
 
 def open() {
 	if(logEnable) log.info "open()"
     def currentLevel = device.currentValue("level")
-    if (currentLevel == 100) {
+/*    if (currentLevel == 100) {
     	sendEvent(name: "windowShade", value: "open")
         return
     }
+*/
 	sendTuyaCommand("0104", "00", "0100")
 }
 
@@ -199,7 +207,14 @@ def updated() {
 	def val = Direction
     sendEvent([name:"Direction", value: (val == "00" ? "Forward" : "Reverse")])    
 	DirectionSet(val)
-}	
+}
+def initialize() {
+	// Runs on reboot, or can be triggered manually.
+    def randomSixty = Math.abs(new Random().nextInt() % 60)
+	log.info "Initialize running updated in $randomSixty seconds"
+    state.lastmsg = now()
+    runIn(randomSixty,updated)
+}
 
 def DirectionSet(Dval) {
 	if(logEnable) log.info "Direction set ${Dval} "
