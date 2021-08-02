@@ -56,6 +56,7 @@ metadata {
     preferences {
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         input name: "traceEnable", type: "bool", title: "Enable trace logging", defaultValue: true
+        input name: "transitionTime", type: "enum", description: "", title: "Transition time", options: [[500:"500ms"],[1000:"1s"],[1500:"1.5s"],[5000:"5s"],[10000:"10s"]], defaultValue: 1000
     }
 }
 
@@ -135,7 +136,7 @@ def parseAttributeList(cluster, list) {
             parsed &= parseColorAttribute(attrId, attrValue)
         }
         else {
-            log.info "Not parsing cluster $cluster attribute: $list"
+            //log.info "Not parsing cluster $cluster attribute: $list"
             parsed = false;
         }
 
@@ -183,9 +184,12 @@ def parse(String description) {
 
                 if(raw) {
                     def clusterId = map.cluster
-                    def attrList = raw.substring(12)
+                    logDebug "Parsing : clusterId = $clusterId and ${map}"
+                    log.debug "parse raw ${raw}"
+                    def attrList = !raw.substring(12)
+                    logDebug "Parsing : attrList = $attrList"
 
-                    parsed = parseAttributeList(clusterId, attrList)
+                    if (attrList) parsed = parseAttributeList(clusterId, attrList)
 
                     //if(state.colorChanged || (state.colorXReported && state.colorYReported)) {
                     if(state.colorXReported && state.colorYReported) {
@@ -204,7 +208,8 @@ def parse(String description) {
                 //[raw:catchall: 0104 0008 01 01 0040 00 70B3 00 00 0000 0B 01 0400, profileId:0104, clusterId:0008, 
                 //clusterInt:8, sourceEndpoint:01, destinationEndpoint:01, options:0040, messageType:00, dni:70B3, 
                 //isClusterSpecific:false, isManufacturerSpecific:false, manufacturerId:0000, command:0B, direction:01, data:[04, 00]]
-                log.debug "Not parsing cluster message $descMap , ${descMap.attrInt}"
+                
+                //log.debug "Not parsing cluster message $descMap , ${descMap.attrInt}"
                
                //ct  dim level to add
                 //0104 0008 01 01 0040 00 70B3 00 00 0000 0B 01 0400 
@@ -217,7 +222,7 @@ def parse(String description) {
     }
 
     if(!parsed) {
-        log.info "DID NOT PARSE MESSAGE for description : $description"
+       // log.info "DID NOT PARSE MESSAGE for description : $description"
     }
 
     for(ev in events) {
@@ -256,10 +261,10 @@ def updateColor(rgb) {
         def amount = (MAX_COLOR_TEMP - MIN_COLOR_TEMP) * percent
         def val = Math.round(MIN_COLOR_TEMP + amount)
         events += createEvent(name: "colorTemperature", value: val)
-        events += createEvent(name: "colorMode", value: "CT")
+        //events += createEvent(name: "colorMode", value: "CT")
         events += setGenericTempName(val)
     } else {
-        events += createEvent(name: "colorMode", value: "RGB")
+       // events += createEvent(name: "colorMode", value: "RGB")
         events += setGenericName(hsv.hue)
     }
 
@@ -283,8 +288,10 @@ def sendZigbeeCommands() {
         return cmds
     }
 }
-
-def setLevel(value, rate=null) {
+def setLevel(value) {
+    setLevel(value, null) // (transitionTime?.toBigDecimal() ?: 5000) / 1000)
+}
+def setLevel(value, rate) {
     logDebug "Set level $value, $rate"
 
     if (rate == null) {
@@ -297,16 +304,20 @@ def setLevel(value, rate=null) {
     runInMillis(100, sendZigbeeCommands)
 }
 
-def setColorTemperature(rawValue) {
-    def rate = transitionTime?.toInteger() ?: 1000
-    def value = intTo16bitUnsignedHex((1000000/rawValue).toInteger())
-    def cmd = []
+def setColorTemperature(rawValue, level=null ,transitionTime=null) {
+    
+    Integer rate = transitionTime?.toInteger() ?: 1000
+    String value = intTo16bitUnsignedHex((1000000/rawValue).toInteger())
+    //log.debug "Temp=$value, Level=$level ,rate= $rate"
+    
+    List cmd = []
     def isOn = device.currentValue("switch") == "on"
 
     if (isOn){
         cmd = [
-                "he cmd 0x${device.deviceNetworkId} 0x${device.endpointId} 0x0300 0x000A {${value} ${intTo16bitUnsignedHex(rate / 100)}}",
-                "delay ${rate + 400}",
+            //"he cmd 0x${device.deviceNetworkId} 0x${device.endpointId} 0x0300 0x000A {${value} ${intTo16bitUnsignedHex(rate / 100)}}",
+            "he cmd 0x${device.deviceNetworkId} 0x${device.endpointId} 0x0300 0x000A {${value}}",
+                "delay ${rate + 500}",
                 "he rattr 0x${device.deviceNetworkId} 0x${device.endpointId} 0x0300 0x0007 {}", "delay 200",
                 "he rattr 0x${device.deviceNetworkId} 0x${device.endpointId} 0x0300 0x0008 {}"
         ]
@@ -326,16 +337,18 @@ def setColorTemperature(rawValue) {
         ]
     }
     state.lastCT = value
+    sendEvent(name: "colorMode", value: "CT")
     return cmd
 }
 def intTo16bitUnsignedHex(value) {
-    def hexStr = zigbee.convertToHexString(value.toInteger(),4)
+    String hexStr = zigbee.convertToHexString(value.toInteger(),4)
+    //log.debug "intTo16bitUnsignedHex $hexStr"
     return new String(hexStr.substring(2, 4) + hexStr.substring(0, 2))
 }
 
 def setColor(value) {
     logDebug "setColor($value)"
-    if (value.hue == null) { value.hue = state.hue = state.hue }
+    if (value.hue == null ) { value.hue = state.hue  }
     if (value.saturation == null){ value.saturation = state.saturation}
                                  
     def rgb = colorHsv2Rgb(value.hue / 100, value.saturation / 100)
@@ -368,7 +381,8 @@ def setColor(value) {
     cmds += zigbee.command(0x0300, 0x07, strX, strY, "0a00")
 
     state.cmds += cmds
-
+    sendEvent(name: "colorMode", value: "RGB")
+    sendEvent(name: "colorTemperature", value: null)
     unschedule(sendZigbeeCommands)
     runInMillis(500, sendZigbeeCommands)
 }
