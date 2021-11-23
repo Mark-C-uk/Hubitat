@@ -345,7 +345,7 @@ def configure() {
 	if (state.productId == "4") {
         log.trace "device dose not report temp"
 	}
-
+sendEvent(name:"heatingSetpoint", value: "10", unit: "°C", displayed: false) //dummy value to allow equations to run later
     sendEvent(name:"minHeatingSetpoint", value: "4", unit: "°C", displayed: false)
 	sendEvent(name:"maxHeatingSetpoint", value: "28", unit: "°C", displayed: false)
     
