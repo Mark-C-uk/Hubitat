@@ -51,7 +51,7 @@ void handler(evt) {
 
     whichOn += '<p>Therm</p>'
     therms?.each{
-			if(it.thermostatMode != "off") {
+			if(it.currentThermostatMode != "off") {
                 whichOn += "${it}\n"
                 //whichOn << it
             }
@@ -99,5 +99,4 @@ def createDataChildDevice() {
     }
     return statusMessageD
 }
-
 
