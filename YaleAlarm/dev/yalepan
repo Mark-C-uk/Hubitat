@@ -1,0 +1,233 @@
+/**
+ *V1 to fun with smartapp
+ *///, ocfDeviceType:"oic.d.securityPanel" // Required Resource name = Mode , Required Resource Type = oic.r.mode
+ //vid: "generic-siren-8", ) no battery
+ //vid: "SmartThings-smartthings-Z-Wave_Siren" no battery
+ //vid: "generic-siren-11" temp and battery 
+ 
+/*
+preferences {
+	input description: "Once you have filled in your details \nUse “Alarm off” to Disarm in any mode \nUse “siren” to Home Arm (Arm Stay) \nUse “both” or “siren and strobe”  to Fully Arm (Arm away).", title: "Guide", displayDuringSetup: false, type: "paragraph", element: "paragraph"
+	//input ("sendPushMessage", "text", title: "Send a push notification?", description: "type yes to recive push messages")
+}
+*/
+
+metadata {
+	definition (name: "Yale Alarm pannel", namespace: "Mark-C-UK", author: "Tapion1ives/Mark-C-uk/foyst", ocfDeviceType: "x.com.st.d.siren", vid: "generic-siren-2") { 
+    
+		capability "Alarm"
+		capability "Lock"
+        capability "Refresh"
+		capability "Switch"
+        capability "SecurityKeypad"
+		//capability "Polling"
+        
+        attribute "supportedModes", "string"
+        attribute "modes", "string"
+        attribute "securityKeypadvalue", "string"
+	}
+    
+    preferences {
+        input description: "Once you have filled in your details \nUse “Alarm off” to Disarm in any mode \nUse “siren” to Home Arm (Arm Stay) \nUse “both” or “siren and strobe”  to Fully Arm (Arm away).", title: "Guide", displayDuringSetup: false, type: "paragraph", element: "paragraph"
+        input "logEnable", "bool", defaultValue: false, title: "Enable Debug Logging", description: "Enable extra logging"
+    }
+}
+
+def updated() {
+	log.debug "updated"
+    List supportedModes = []
+	supportedModes << "armed away" 
+	supportedModes << "armed home" 
+	supportedModes << "disarmed" 
+	supportedModes << "unknown" 
+	
+	state.supportedModes = supportedModes
+    log.info "${device.displayName} Supportedmodes - $supportedModes"
+	sendEvent(name: "supportedModes", value: supportedModes, displayed: false)
+	//unschedule()
+}
+def installed() {
+	log.info "installed"
+}
+
+void refresh() {
+	log.info "${device.displayName} Refresh"
+    try {
+        //parent.getDeviceData()
+        parent.getDeviceData()
+    }
+    catch (e){
+        log.warn "${device.displayName} refresh error $e"
+    }
+}
+
+def parse(data){
+	if (logEnable == true) log.debug "${device.displayName} - parse data=${data?.data} message=${data?.message} "
+    List events = []
+    String modes = ""
+    String lock = ""
+    String Switch = ""
+    String alarm = ""
+    String dmsg = data?.message
+    String resp = data?.data[0]?.mode
+    
+    if (dmsg == "OK!"){
+    	if (resp.equals("arm")) {
+            state.errorCount = 0
+            modes = "armed away"
+            lock = "unlocked"
+            Switch = "on"
+            alarm = "both"
+        }
+        else if (resp.equals("home")) {
+            state.errorCount = 0
+            modes = "armed home"
+            lock = "locked"
+            Switch = "off"
+            alarm = "siren"
+        }
+        else if (resp.equals("disarm")) {
+            state.errorCount = 0
+            modes = "disarmed"
+            lock = "unlocked"
+            Switch = "off"
+            alarm = "off"
+        }
+        else { //if (YaleAlarmState.mode.contains("system.permission_denied")) {
+            state.errorCount = state.errorCount +1
+            log.warn "${device.displayName} - parse data=${data?.data} message=${data?.message} system off line/Error or Resp $resp"
+            modes = "unknown"
+            alarm = "disabled"
+            if (state.errorCount < 5){ runIn(30,refresh)}
+        }
+    }
+    else { //if (dmsg != "OK!"){
+        state.errorCount = state.errorCount +1
+        log.warn "${device.displayName} - message=$dmsg, data=$data"
+        modes = "unknown"
+        alarm = "disabled"
+        if (state.errorCount < 5){ runIn(20,refresh) }
+    }
+    log.info "${device.displayName} Data pushed in, state is $modes, issues are '${state.errorCount}'" //${data?.message}
+/*    
+    events << sendEvent(name: "securityKeypadvalue", value: modes, isStateChange: false)
+	events << sendEvent(name: "modes", value: modes, descriptionText: "Refresh - response '$dmsg'") //isStateChange: false,
+	events << sendEvent(name: "lock", value: lock) //isStateChange: false,
+	events << sendEvent(name: "switch", value: Switch) //isStateChange: false,
+    events << sendEvent(name: "alarm", value: alarm) //isStateChange: false,
+    
+    createEvent(name: "securityKeypadvalue", value: modes, isStateChange: false)
+	createEvent(name: "modes", value: modes, descriptionText: "Refresh - response '$dmsg'") //isStateChange: false,
+	createEvent(name: "lock", value: lock) //isStateChange: false,
+	createEvent(name: "switch", value: Switch) //isStateChange: false,
+    createEvent(name: "alarm", value: alarm) //isStateChange: false,
+ */   
+    events <<createEvent(name: "securityKeypadvalue", value: modes, isStateChange: false)
+	events <<createEvent(name: "modes", value: modes, descriptionText: "Refresh - response '$dmsg'") //isStateChange: false,
+	events <<createEvent(name: "lock", value: lock) //isStateChange: false,
+	events <<createEvent(name: "switch", value: Switch) //isStateChange: false,
+    events <<createEvent(name: "alarm", value: alarm) //isStateChange: false,
+    
+    modes = null
+    lock = null
+    Switch = null
+    alarm = null
+    dmsg = null
+    resp = null
+    events
+}
+
+// ==================== Buttons / voice comands ==========================
+void lock() { armHome() }
+void siren() { armHome() }
+void strobe() {armHome() }
+void on() {	armAway() }
+void both() { armAway() }
+void off() { disarm() }
+void unlock() { disarm() }
+void armNight() {armHome()}
+// ===================   Buttons / voice comands end in to Modes ====================
+
+void armAway(mode) {
+	mode = "arm"
+	postcmd(mode)
+}
+void armHome(mode) {
+	mode = "home"
+	postcmd(mode)
+}
+void disarm(mode) {
+	mode = "disarm"
+	postcmd(mode)
+}
+void modes (mode) {
+	if (logEnable == true) log.debug "${device.displayName} - direct modes command $mode"
+	if (mode == "active") { log.warn "not handled $mode"}
+	if (mode == "armedAway") {armAway()}
+	if (mode == "armedHome") {armHome()}
+	if (mode == "disarm") {disarm()}
+}
+void setAlertState(Astate){
+    if (logEnable == true) log.debug "${device.displayName} - Aleart state is $Astate"
+}
+// ===================   Modes end    ==  in to post CMDs ====================
+private postcmd(mode){
+	log.trace "${device.displayName} postcmd outgoing Mode CMD $mode "
+    
+    List eventlist = []
+    String dmsg = ""
+    String modes = ""
+    String lock = ""
+    String Switch = ""
+    String alarm = ""
+    data = parent.ArmDisRef(mode)
+    
+    if (logEnable == true) log.debug "POSTCMD $data"
+    
+    if (data != "error"){ dmsg = data?.message }
+    else { dmsg = data }
+    
+	if (dmsg == 'OK!'){
+    	state.errorCount = 0
+    	if (mode == 'arm'){
+            modes = "armed away"
+            lock = "unlocked"
+            Switch = "on"
+            alarm = "both"
+        }
+        else if (mode == 'disarm'){
+            modes = "disarmed"
+            lock = "unlocked"
+            Switch = "off"
+            alarm = "off"
+        }
+        else if (mode == 'home'){
+            modes = "armed home"
+            lock = "locked"
+            Switch = "off"
+            alarm = "siren"
+        }
+    }
+	else {
+    	state.errorCount = state.errorCount +1
+        modes = "unknown"
+        alarm = "disabled"
+        lock = "unknown"
+        Switch = "error"
+    }
+    log.info "${device.displayName} Mode Change, mode is $modes, message is $dmsg, issues are ${state.errorCount}"
+    eventlist << sendEvent(name: "securityKeypadvalue",  value: modes, isStateChange: false)
+	eventlist << sendEvent(name: "modes", value: modes, descriptionText: "Mode Change to $modes - $dmsg") //isStateChange: false,
+    eventlist << sendEvent(name: "lock", value: lock, ) //isStateChange: false,
+	eventlist << sendEvent(name: "switch", value: Switch) //isStateChange: false,
+    eventlist << sendEvent(name: "alarm", value: alarm) //isStateChange: false,
+    
+    modes = null
+    lock = null
+    Switch = null
+    alarm = null
+    dmsg = null
+    resp = null
+    
+    return eventlist
+}
