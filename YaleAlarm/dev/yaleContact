@@ -1,0 +1,82 @@
+/**
+*  Version 2.0 - created to run with smart app
+*	Version 0.1 -  
+*/
+
+metadata {
+	definition (name: "Yale Alarm Open Close Sensor", namespace: "Mark-C-UK", author: "Mark-C-UK") {
+		capability "Contact Sensor"
+		capability "Sensor"
+		//capability "Polling"
+    	//capability "Health Check"
+        capability "Battery" 
+        capability "Refresh"
+		//command "datain"
+    }
+    preferences {
+    }
+} 
+/*
+def datain(data){
+	//log.debug "data is $data"
+    def eventlist = []
+	if (data.status_open[0] == 'device_status.dc_close'){
+    	eventlist << sendEvent(name: "contact", value: "closed")
+    }
+    else if (data.status_open[0] == 'device_status.dc_open'){
+    	eventlist << sendEvent(name: "contact", value: "open")
+    }
+    else {
+    	eventlist << sendEvent(name: "contact", value: "Failed", descriptionText: "Device is '${data.status_open[0]}'")
+    	log.warn "Datain failed - $data"
+    }
+    
+    if (data.status_fault[0] == 'device_status.low_battery'){
+    	eventlist << sendEvent(name:"battery", value:"1", descriptionText: "Low battery warning not 1%")
+    }
+    else {
+        eventlist << sendEvent(name:"battery", value:"100", descriptionText: "Battery OK not 100%")
+    }
+    return eventlist
+}
+*/
+def updated() {
+	log.warn " updated"
+    //unsubscribe()
+	//subscribe(yaleref, "refresh", subHandle)
+}
+def subHandle() {
+	log.warn " im dooing someting"
+}
+
+
+def refresh() {
+	log.info "Refresh"
+    try {
+        parent.getDeviceData()
+    }
+    catch (e){
+        log.warn "refresh error $e"
+    }
+}
+// parse events into attributes
+def parse(data) {
+    //eventlist = []
+	if (data.status_open[0] == 'device_status.dc_close'){
+    	sendEvent(name: "contact", value: "closed")
+    }
+    else if (data.status_open[0] == 'device_status.dc_open'){
+    	sendEvent(name: "contact", value: "open")
+    }
+    else {
+    	sendEvent(name: "contact", value: "Failed", descriptionText: "Device is '${data.status_open[0]}'")
+    	log.warn "Datain failed - $data"
+    }
+    
+    if (data.status_fault[0] == 'device_status.low_battery'){
+    	sendEvent(name:"battery", value:"1", descriptionText: "Low battery warning not 1%")
+    }
+    else {
+        sendEvent(name:"battery", value:"100", descriptionText: "Battery OK not 100%")
+    }
+}
