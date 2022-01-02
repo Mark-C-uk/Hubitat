@@ -1,0 +1,484 @@
+/**
+ *  YaleApp
+ *
+ *  Copyright 2019 Mark Cockcroft (and thanks to the support of DAVE GUTHEINZ)
+ *	
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ *
+ */
+definition(
+    name: "YaleApp",
+    namespace: "Mark-C-uk",
+    author: "Mark Cockcroft",
+    description: "manage yale conncetion",
+    category: "Convenience",
+    iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "",
+	singleInstance: true
+)
+//App code should have all icon urls set to empty string
+
+preferences {
+	page(name: "cloudLogin", title: "Cloud Login", nextPage:"", content:"cloudLogin", uninstall: true)
+	page(name: "selectDevices", title: "Select Devices", nextPage:"", content:"selectDevices", uninstall: true, install: true)
+}
+
+def setInitialStates() {
+	if (!state.Token) {state.Token = null}
+	if (!state.devices) {state.devices = [:]}
+	if (!state.currentError) {state.currentError = "none"}
+	if (!state.errorCount) {state.errorCount = 0}
+}
+
+//	----- LOGIN PAGE -----
+def cloudLogin() {
+	setInitialStates()
+	//def 
+    String cloudLoginText = "If possible, open the IDE and select Live Logging.  THEN, " +
+		"enter your Username and Password for YALE and the "+
+		"action you want to complete.  Your current token:\n\r\n\r${state.Token}" +
+		"\n\r\n\rAvailable actions:\n\r" +
+		"	Initial Install: Obtains token and adds devices.\n\r" +
+		"	Add Devices: Only add devices.\n\r" +
+		"	Update Token:  Updates the token.\n\r"
+	//def 
+    String errorMsg = ""
+	if (state.currentError != "none"){
+		errorMsg = "Error communicating with cloud:\n\r\n\r${state.currentError}" +
+			"\n\r\n\rPlease resolve the error and try again.\n\r\n\r"
+		}
+	return dynamicPage(
+		name: "cloudLogin", 
+		title: "Device Service Manager", 
+		nextPage: "selectDevices", 
+		uninstall: true) {
+		section(errorMsg) {} //new {}
+		section(cloudLoginText) {
+			input( 
+				"userName", "email", 
+				title:"Your YALE Email Address", 
+				required:true, 
+				displayDuringSetup: true
+			)
+			input(
+				"userPassword", "password", 
+				title:"account password", 
+				required: true, 
+				displayDuringSetup: true
+			)
+			input(
+				"updateToken", "enum",
+				title: "What do you want to do?",
+				required: true, 
+				multiple: false,
+				options: ["Initial Install", "Add Devices", "Update Token"]
+			)
+            input("push", "bool", defaultValue: true, title: "Send push messages", required: true, displayDuringSetup: true )
+            input("sendPushMessageto", "capability.notification", title: "Send a Push notification to?", multiple: true, required: false)
+            input "logEnable", "bool", defaultValue: false, title: "Enable Debug Logging", description: "Enable extra logging"
+		}
+	}
+}
+//====================================== loginPage end
+
+//	----- SELECT DEVICES PAGE -----
+def selectDevices() {
+	if (updateToken != "Add Devices") {
+		getToken()
+	}
+	if (state.currentError != "none" || updateToken == "Update Token") {
+		return cloudLogin()
+	}
+	getDevices()
+	//def 
+    devices = state.devices
+	if (state.currentError != "none") {
+		return cloudLogin()
+	}
+	//def 
+    String errorMsg = ""
+	if (devices == [:]) {
+		errorMsg = "There were no devices from YALE"
+	}
+	//def 
+    newDevices = [:]
+    if (logEnable) log.debug "select devices, ${devices}"
+	devices.each {
+    	//log.debug "select devices each ${it.value.deviceId} - ${it.value.alias} - model ${it.value.deviceModel}"
+		//def 
+        isChild = getChildDevice(it.value.deviceId) // deviceId changed to dni so dont add twice
+		if (!isChild) {
+        	//log.debug "select devices, each !ischild ${it.value.alias} - ${it.value.deviceid}" //value.
+			newDevices["${it.value.deviceId}"] = "${it.value.alias} \n model ${it.value.deviceModel}"
+            //log.debug "select devices, each !ischild $newDevices"
+		}
+	}
+	if (newDevices == [:]) {
+		errorMsg = "No new devices to add."
+		}
+	settings.selectedDevices = null
+	//def 
+    String DevicesMsg = "Token is ${state.Token}\n\r" +
+		"TAP below to see the list of devices available select the ones you want to connect to " +
+		"SmartThings.\n\r\n\rPress DONE when you have selected the devices you " +
+		"wish to add, thenpress DONE again to install the devices.  Press	<	" +
+		"to return to the previous page."
+	return dynamicPage(
+		name: "selectDevices", 
+		title: "Select Your Devices", 
+		install: true,
+		uninstall: true) {
+		section(errorMsg){} //new {}
+		section(DevicesMsg) {
+			input "selectedDevices", "enum",
+			required:false, 
+			multiple:true, 
+			title: "Select Devices (${newDevices.size() ?: 0} found)",
+			options: newDevices
+		}
+	}
+}
+def getDevices() {
+	List currentDevices = getDeviceData()
+    if (logEnable == true) log.debug "get devices - ${currentDevices}"
+	state.devices = [:]
+    Map devices = state.devices
+	currentDevices.each { //.data?.data
+        Map device = [:]
+		device["alias"] = it.name
+		device["deviceModel"] = it.type
+		device["deviceId"] = it.device_id
+        devices << ["${it.device_id}": device]	
+		log.info "GET Device ${it.name} - ${it.device_id}"
+	}
+    //def 
+    Map deviceP = [:] //make up device for pannel and add to array
+	deviceP["alias"] = "Yale Alarm"
+	deviceP["deviceModel"] = "YaleAlarmPannel"
+	deviceP["deviceId"] = "RF:YalePan1"  
+	devices << ["RF:YalePan1": deviceP]
+    
+    if (logEnable) log.debug "arry $devices"
+}
+
+def addDevices() {
+	//log.debug "ADD Devices "// ${state?.devices}
+	Map Model = [:]
+	Model << ["YaleAlarmPannel" : "Yale Alarm pannel"]			
+	Model << ["device_type.keypad" : "Yale Alarm Open Close Sensor"]
+    Model << ["device_type.remote_controller" : "Yale Alarm Open Close Sensor"]
+    Model << ["device_type.pir" : "Yale Alarm Open Close Sensor"]
+    Model << ["device_type.door_contact" : "Yale Alarm Open Close Sensor"]
+
+	def hub = location.hubs[0]
+	def hubId = hub.id
+	selectedDevices.each { deviceId -> 
+    	log.debug "Add Devices each -${device?.value?.alias} - $deviceId"
+		def isChild = getChildDevice(deviceId)
+		if (!isChild) {
+			def device = state.devices.find { it.value.deviceId == deviceId }
+			def deviceModel = device.value.deviceModel 
+            log.debug "Add Devices, not child $device - $deviceModel"
+			addChildDevice(
+				"smartthings",
+				Model["${deviceModel}"], 
+				device.value.deviceId,
+				hubId, [
+					"label": "${device.value.alias} Yale",
+					"name": "YaleApp Device",
+					"data": [
+						"deviceId" : device.value.deviceId,
+					]
+				]
+			)
+			log.info "Installed  $deviceModel with alias ${device.value.alias}"
+		}
+	}
+}
+
+def yaleAuthToken () {
+	return "VnVWWDZYVjlXSUNzVHJhcUVpdVNCUHBwZ3ZPakxUeXNsRU1LUHBjdTpkd3RPbE15WEtENUJ5ZW1GWHV0am55eGhrc0U3V0ZFY2p0dFcyOXRaSWNuWHlSWHFsWVBEZ1BSZE1xczF4R3VwVTlxa1o4UE5ubGlQanY5Z2hBZFFtMHpsM0h4V3dlS0ZBcGZzakpMcW1GMm1HR1lXRlpad01MRkw3MGR0bmNndQ=="
+}
+
+
+def getToken() {
+	//def toke = createAccessToken()
+	//log.debug "Attempting to login for new token tringin this $toke"
+
+    List eventlist = []
+    // String tokentoday = ""
+    // if (state.Token != null && state.errorCount = 0) tokentoday = state.state.Token
+    //else tokentoday = yaleAuthToken()
+
+    Map paramsLogin = [
+			uri: "https://mob.yalehomesystem.co.uk/yapi/o/token/",
+			body: [grant_type: "password", username: "${userName}" , password: "${userPassword}"],
+			headers: ['Authorization' : "Basic ${yaleAuthToken()}"],
+            //headers: ['Authorization' : "Basic $toke"],
+			requestContentType: "application/x-www-form-urlencoded",
+			//in event of error// requestContentType: "application/json",
+			contentType: "application/json"
+	]
+    try{
+	httpPost(paramsLogin) { responseLogin ->
+		if (logEnable) log.debug "Login response is $responseLogin.data"
+        Integer respstatus = responseLogin?.status
+        if (respstatus == 200){
+        	state.Token = responseLogin?.data?.access_token
+    		log.info "$respstatus - Token updated to ${state.Token}"
+    		eventlist << sendEvent(name: "TokenUpdate", value: "tokenUpdate Successful.")
+            if (state.currentError != "none") {
+				state.currentError = "none"
+                state.errorCount = 0
+			}
+    	}
+    	else {
+			state.currentError = "token error $respstatus, ${responseLogin?.data}" //responseLogin.message
+			log.warn "Error in getToken: ${state.currentError}, ${responseLogin?.data}"
+			eventlist << sendEvent(name: "TokenUpdate", value: state.currentError)
+            errorhand("Error Token NOT 200")
+		}
+	}
+    }
+    catch (e){
+    	log.warn "CATCH Error token: ${e}, ${e?.message}"
+        state.currentError = e?.message
+        eventlist << sendEvent(name: "TokenUpdate", value: state.currentError)
+        errorhand("Error Token catch")
+    }
+	if (logEnable == true) log.debug "token end ${state.currentError}"
+    return eventlist
+}
+//	----- GET DEVICE DATA FROM THE CLOUD -----
+def getDeviceData() { // get details for adding
+    Map respdata = [:]
+    List currentDevices = []
+
+    Map getDeviceStatus = [
+			uri: "https://mob.yalehomesystem.co.uk/yapi/api/panel/device_status/",
+			headers: ['Authorization' : "Bearer ${state.Token}"]
+	]
+    try {
+    httpGet(getDeviceStatus) { response ->
+        respdata = response?.data
+        
+        if (response?.status == 200){
+        	if (state.errorCount != 0 || state.currentError != "none"  ) {
+                state.errorCount = 0
+                state.currentError = "none"
+            }
+        	
+        	currentDevices = response?.data?.data
+	        //log.debug "$currentDevices"
+            currentDevices.each {
+        		//log.debug "it ${it?.name} - ${it?.device_id}"
+				def isChild = getChildDevice(it?.device_id)
+                //log.debug "IS $isChild"
+            	if (isChild) {
+                    //log.info "Sending status of '${it?.status_open[0]}' to child '${it?.name}'" 
+                    isChild.parse(it) //reenabled
+                    //log.debug "${it}"
+                }
+        	}
+        }
+		else {
+            state.currentError = "error get devices ${response?.status} $respdata"
+			log.warn "Get device data NOT 200 - ${state.currentError}"
+            errorhand("Get device data NOT 200")
+            sendEvent(name: "getdevicedata devices", value: "yale error")
+		}
+	}
+    }
+    
+    catch (ed){
+    	log.warn "CATCH Error device data: ${ed}, ${ed?.message}"
+        state.currentError = ed?.message
+        errorhand("Get device data catch")
+        sendEvent(name: "getdevicedata devices ", value: "catch error")
+    }
+
+    Map getPanelStatus = [
+			uri: "https://mob.yalehomesystem.co.uk/yapi/api/panel/mode/", //	api/panel/mode/",
+			headers: ['Authorization' : "Bearer ${state.Token}"]
+	]
+    try {
+    httpGet(getPanelStatus) { response ->
+
+        respdata = response?.data
+        
+        if (response?.status == 200){
+            //String respmsg = response?.data?.message
+        	
+        	//log.debug "Pannel request good - ${response.data.data.getAt(0)} , ${response.data.message}" //${response.data}
+        	def isChild = getChildDevice('RF:YalePan1')
+            	if (isChild) {
+                	//log.info "Sending status of '${response.data.data}', '$respmsg' to AlarmPannel" 
+                	//isChild.datain(respdata)
+                    isChild.parse(respdata)
+                	if (response?.data?.message != 'OK!'){
+                        send("Alarm updated with message ${response?.data?.message}")   
+                    }
+                }
+        }
+        else {
+            state.currentError = "error get pannel ${response?.status} $respdata"
+			log.warn "Get pannel data NOT 200 - ${state.currentError}"
+            errorhand("Get pannel data NOT 200")
+            sendEvent(name: "getdevicedata pannel", value: "yale error")
+		}
+	}
+    }
+    catch (ep){
+		state.currentError = ep?.message
+    	log.warn "CATCH Error Get pannel data ${state.currentError}"
+        errorhand("Get pannel data catch")
+        sendEvent(name: "getdevicedata pannel", value: "catch error")
+    }
+   // log.debug "get device data current devices" // ${currentDevices.name}"
+
+    //return currentDevices
+    respdata = null
+    currentDevices = null
+    return 
+}
+
+private send(msg) {
+    if ( push == true ) {
+        log.trace "sending push message - $msg" 
+        sendPushMessageto.deviceNotification("$msg")
+    }
+}
+//	----- ARM DISARM REFRESH -----
+def ArmDisRef(mode){
+	log.trace "Incoming Mode CMD ${mode.value} "
+    Map respdata = [:]
+	paramsMode = [
+			uri: "https://mob.yalehomesystem.co.uk/yapi/api/panel/mode/",
+			body: [area: 1, mode: "${mode.value}"],
+			headers: ['Authorization' : "Bearer ${state.Token}"],
+			requestContentType: "application/x-www-form-urlencoded", //in event of error// requestContentType: "application/json",
+			contentType: "application/json"
+	]
+    try{
+        getDeviceData()
+	httpPost(paramsMode) {	response ->
+    	//int respstatus = response?.status
+        respdata = response?.data
+		if (response?.status == 200){
+            def respmsg = response?.data?.message
+            
+            if (state.errorCount != 0 || state.currentError != "none") { 
+                state.errorCount = 0
+                state.currentError = "none"
+            }
+            if (respmsg != 'OK!'){ send("Alarm mode change to '$mode' issue, message $respmsg")} //if door left open
+            
+            log.info "Mode $mode - '${response?.status}' - '$respmsg'" // $respdata" 
+		}
+		
+        else { //response status not 200
+        	log.warn "Error in MODE not 200, '${response?.status}' to $mode, ${state.currentError} - $respdata"
+			state.currentError = "error mode pannel ${response?.status} - $respdata"
+			respdata = 'error'
+            errorhand("Error Arm/Dis/Ref NOT 200")
+		}
+	}
+    }
+    catch (e){
+    	log.warn "CATCH Error arm/dis/Ref: ${e}, ${e?.message}"
+        state.currentError = e?.message
+        errorhand("Error Arm/Dis/Ref Catch")
+        respdata = 'error : $e'
+        
+    }
+    return respdata
+}
+
+def errorhand (msg){
+	log.warn "Error Handler $msg"
+    sendEvent(name: "currentError", value: "Yale - $msg ${state.currentError}")
+    send("Yale - $msg - ${state.currentError}")
+
+}
+//	----- INSTALL, UPDATE, INITIALIZE -----
+def installed() {
+	updated()
+}
+
+def initialize() {
+	// Runs on reboot, or can be triggered manually.
+    def randomSixty = Math.abs(new Random().nextInt() % 60)
+	log.info "Initialize running updated in $randomSixty seconds"
+    runIn(randomSixty,updated)
+}
+
+def updated() {
+	log.info "initialise"
+	unsubscribe()
+	unschedule()
+	runEvery5Minutes(checkError)
+    runEvery3Hours(getDeviceData)
+  //schedule(Date dateTime, String handlerMethod, Map options = null)
+  //schedule(String expression, String handlerMethod, Map options = null)
+    def toktime = now() + 604800000
+    
+    
+    randomSixty = Math.abs(new Random().nextInt() % 60)
+	randomTwentyFour = Math.abs(new Random().nextInt() % 24)
+    schedule("${randomSixty} ${randomSixty} ${randomTwentyFour} ? * 2/2 *", getToken)
+    
+    //schedule("15 1 0 ? * 2/2 *", getToken) // every 2 days
+    log.debug "toke = $toktime , ransixity ${randomSixty}, ran24 ${randomTwentyFour}"
+	//if (selectedDevices) {
+	if (selectedDevices) {
+		addDevices()
+	}
+}
+//	----- PERIODIC CLOUD MX TASKS -----
+void checkError() {
+	if (state.currentError == null || state.currentError == "none") {
+		//log.info "YaleApp - no issued - ${state?.currentError}"
+	}
+    else {
+        String errMsg = state.currentError
+	    log.info "Attempting to solve error: ${errMsg}"
+	    state.errorCount = state.errorCount +1
+        send("error ${errMsg}, count is ${state.errorCount}")
+	    if (state.errorCount < 6) {
+		    sendEvent (name: "ErrHandling", value: "Handle comms error attempt ${state.errorCount} - $errMsg")
+		//getDevices()
+		//if (state.currentError == null) {
+		//	log.info "getDevices successful. token is good."
+		//	return
+		//}
+		    log.warn "CHECK ERROR, ${errMsg} error while attempting getDevices.  Will attempt getToken"
+		    getToken()
+		    if (state.currentError == null || state.currentError == "none") {
+			    log.info "getToken successful.  Token has been updated."
+			    getDevices()
+		    }
+	    }
+        else {
+		    log.warn "checkError:  No auto-correctable errors or exceeded Token request count."
+            send("error ${errMsg}, count is ${state.errorCount} couldnt fix it")
+	    }
+	log.warn "checkError residual:  ${state.currentError}"
+    }
+}
+//	----- CHILD CALLED TASKS -----
+def removeChildDevice(alias, deviceNetworkId) {
+	try {
+		deleteChildDevice(it.deviceNetworkId)
+		sendEvent(name: "DeviceDelete", value: "${alias} deleted")
+	} catch (Exception e) {
+		sendEvent(name: "DeviceDelete", value: "Failed to delete ${alias}")
+	}
+}
