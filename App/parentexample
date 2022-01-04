@@ -1,0 +1,67 @@
+/**
+ 
+*/
+
+
+definition(
+    name: "Example Parent",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "sample parent app",
+    category: "Convenience",
+	iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "")
+
+
+preferences {
+     page name: "mainPage", title: "", install: true, uninstall: true
+}
+
+
+def installed() {
+    log.info "Installed with settings: ${settings}"
+    initialize()
+}
+
+
+def updated() {
+    log.info "Updated with settings: ${settings}"
+    unsubscribe()
+    initialize()
+}
+
+
+def initialize() {
+    log.info "There are ${childApps.size()} child apps"
+    childApps.each { child ->
+    	log.info "Child app: ${child.label}"
+    }
+}
+
+
+def installCheck() {         
+	state.appInstalled = app.getInstallationState()
+	
+	if (state.appInstalled != 'COMPLETE') {
+		section{paragraph "Please hit 'Done' to install '${app.label}' parent app "}
+  	}
+  	else {
+    	log.info "Parent Installed OK"
+  	}
+}
+
+def mainPage() {
+    dynamicPage(name: "mainPage") {
+    	installCheck()
+		
+		if (state.appInstalled == 'COMPLETE') {
+			section("title", "${app.label}") {
+				paragraph "App description"
+			}
+  			section("<b>Child:</b>") {
+				app(name: "anyOpenApp", appName: "ChildName", namespace: "Mark-C-UK", title: "<b>child desc</b>", multiple: true)
+			}
+		}
+	}
+}
