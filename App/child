@@ -1,0 +1,19 @@
+/*
+
+*/
+
+
+definition(
+	parent: "Mark-C-UK:Example Parent",
+    name: "ChildName",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "Child app ",
+    category: "Convenience",
+	iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "")
+
+
+preferences {
+}
