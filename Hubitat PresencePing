@@ -42,7 +42,8 @@ preferences {
     input("ipAdd", "string", title: "IP address of device", required:true, submitOnChange: true)
     input("ipAddRout", "string", title: "IP address of router, to test befor sending away", submitOnChange: true)
     input("numPings", "number", title: "Number of pings to issue", defaultValue:2, required:true, submitOnChange:true, range: "1..5")
-    input("pingPeriod", "number", title: "Away Ping Repeat in Seconds, when Present will be *10 this value to reduce hub load \n Zero to disable", defaultValue: 30, required:true, submitOnChange: true)
+    input("pingPeriod", "number", title: "Away Ping Repeat in Seconds,Zero to disable", defaultValue: 30, required:true, submitOnChange: true)
+    input("pingPeriodHome", "number", title: "Home Ping Repeat in Seconds", defaultValue: 310, required:true, submitOnChange: true)
     input("awayPeriod", "number", title: "number of missed pings to be away", defaultValue: 5, required:true, submitOnChange: true)
     input("debugEnable", "bool", title: "Enable debug logging?")
     input("textLoggingEnabled", "bool", title: "Enable Text Logging", defaultValue:false)
@@ -56,17 +57,19 @@ def installed() {
 def configure() {
     unschedule()
     if (state.away == null) state.away = 0
-    log.debug "configure()"
     updateAttr("pingData"," ")
     if (device.currentValue("presence") == null) updateAttr("presence","not present")
+    log.debug "configure - state away=${state.away} current presence ${device.currentValue("presence")}, updated next" 
     updated()
 }
 
 def initialize(){
-    configure()
+    // Runs on reboot, or can be triggered manually.
+    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+	log.info "Initialize running configure in $randomSixty seconds"
+    runIn(randomSixty,configure)
 }
 def updated(){
-	log.trace "updated()"
     if (ipAdd == null){
         log.warn "no ip address"
         updateAttr("pingData", "no Device IP address")
@@ -99,8 +102,10 @@ def updated(){
     if (numPings == null) numPings = 2
     if (awayPeriod == null) awayPeriod = 5
     if (pingPeriod == null) pingPeriod = 30
+    if (pingPeriodHome == null) pingPeriodHome = 310
     
     if(state.validIP == true) pinger()
+    log.trace "updated with... valid IP=${state.validIP}, router checking=${state.router}, debugging=$debugEnable, number of pings to send $numPings, number of missed pings before away=$awayPeriod, ping freq- home ${pingPeriodHome} - away ${pingPeriod}"
 }
 
 def refresh() {
@@ -112,21 +117,22 @@ def updateAttr(aKey, aValue){
 }
 
 def pinger(){ 
-    int pingPeriodMod = pingPeriod
+    int pingPeriodMod 
     if (settings.textLoggingEnabled == true) log.debug "Ping initiated"
     if (state.responseReady == false){
         log.warn "not ready"
-        if(pingPeriodMod > 0) runIn(pingPeriodMod, "pinger")
+        if(pingPeriod > 0) runIn(pingPeriod, "pinger")
         return
     }
     if (sendPing(settings.ipAdd) < 100){
-        pingPeriodMod = pingPeriod * 10 // when home dont ping as often
+        pingPeriodMod = pingPeriodHome // when home dont ping as often
         if (state.away != 0) state.away = 0
         if(settings.textLoggingEnabled == true) log.debug "Presence 'present' for $ipAdd"
         updateAttr("presence","present")
         updateAttr("awaycount", state.away)
     }
     else {
+        pingPeriodMod = pingPeriod
         if (device.currentValue("presence") == "not present"){
             if(settings.textLoggingEnabled == true) log.debug "Presence not present already $ipAdd, ${state.away} number of times"
         }
@@ -152,7 +158,7 @@ def pinger(){
         }
     }
     if(settings.pingPeriod > 0) runIn(pingPeriodMod, "pinger")
-    if(settings.textLoggingEnabled == true && pingPeriod > 0) log.debug "Next ping in $pingPeriodMod seconds"
+    if(settings.textLoggingEnabled == true) log.debug "Next ping in $pingPeriodMod seconds"
 }
              
 def sendPing(ipAddress){
