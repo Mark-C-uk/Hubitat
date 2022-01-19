@@ -30,7 +30,7 @@ metadata {
 		capability "Window Shade"
 // mc not supported in HE		capability "Window Shade Preset"
 		capability "Switch Level"
-        
+        capability "Switch"
         capability "Light" //GH
 
 		command "pause"
@@ -56,143 +56,162 @@ private getSETDATA() { 0x00 }
 // Parse incoming device messages to generate events
 def parse(String description) {
 	if (description?.startsWith('catchall:') || description?.startsWith('read attr -')) {
-		def Map descMap = zigbee.parseDescriptionAsMap(description)
-        //if(logEnable) log.debug "Pasred Map $descMap"
-		if (descMap?.clusterInt==CLUSTER_TUYA) {
+        
+        Map descMap = zigbee.parseDescriptionAsMap(description)
+        //if(logEnable == true) log.debug "Pasred Map $descMap"
+		
+        if (descMap?.clusterInt==CLUSTER_TUYA) {
 			if ( descMap?.command == "01" || descMap?.command == "02" ) {
-				def dp = zigbee.convertHexToInt(descMap?.data[3]+descMap?.data[2])
-                if(logEnable) log.debug "dp = " + dp
-				switch (dp) {
+				int dp = zigbee.convertHexToInt(descMap?.data[3]+descMap?.data[2])
+                if(logEnable == true) log.debug "dp = " + dp
+				String data6 = descMap.data[6]
+                
+                switch (dp) {
 					case 1025: // 0x04 0x01: Confirm opening/closing/stopping (triggered from Zigbee)
-                    	def data = descMap.data[6]
-                    	if (descMap.data[6] == "00") {
-                        	if(logEnable) log.debug "parsed opening"
-                            levelEventMoving(100)
+                    	if (data6 == "00") {
+                        	if(logEnable == true) log.debug "parsed opening"
+                            //levelEventMoving(100)
+                            sendEvent([name:"windowShade", value: "opening", descriptionText: "Zigbee Opnening"])
                         } 
-                        else if (descMap.data[6] == "02") {
-                        	if(logEnable) log.debug "parsed closing"
-                            levelEventMoving(0)
+                        else if (data6 == "02") {
+                        	if(logEnable == true) log.debug "parsed closing"
+                            //levelEventMoving(0)
+                            sendEvent([name:"windowShade", value: "closing" , descriptionText: "Zigbee closing" ])
                         }
-                        else {log.debug "parsed else case $dp open/close/stop zigbee $data"}
-                    	break;
+                    else {log.debug "parsed else case $dp open/close/stop zigbee" + descMap.data[6]}
+                    break;
                     
 					case 1031: // 0x04 0x07: Confirm opening/closing/stopping (triggered from remote)
-                    	def data = descMap.data[6]
-                    	if (descMap.data[6] == "01") {
-                        	log.trace "remote closing"
-                            levelEventMoving(0)
+                    	if (data6 == "01") {
+                            if(logEnable == true) log.trace "remote closing"
+                           // levelEventMoving(0)
+                            sendEvent([name:"windowShade", value: "closing" , descriptionText: "Remote closing" ])
                         } 
-                        else if (descMap.data[6] == "00") {
-                        	log.trace "remote opening"
-                            levelEventMoving(100)
+                        else if (data6 == "00") {
+                        	if(logEnable == true) log.trace "remote opening"
+                            //levelEventMoving(100)
+                            sendEvent([name:"windowShade", value: "opening", descriptionText: "Remote Opnening"])
                         }
-                        else {log.debug "parsed else case $dp open/close/stop remote $data"}
-                    	break;
+                    else {log.debug "parsed else case $dp open/close/stop remote ${descMap.data[6]}"}
+                    break;
                     
 					case 514: // 0x02 0x02: Started moving to position (triggered from Zigbee)
-                    	def pos = zigbee.convertHexToInt(descMap.data[9])
-						if(logEnable) log.debug "moving to position :"+pos
+                        int pos = zigbee.convertHexToInt(descMap.data[9])
+						if(logEnable == true) log.debug "moving to position :"+pos
                         levelEventMoving(pos)
                         break;
                     
 					case 515: // 0x03: Arrived at position
-                    	def pos = zigbee.convertHexToInt(descMap.data[9])
-                        if(logEnable) log.debug "${device.displayName} arrived at position:$pos , desc:$description"
+                    	int pos = zigbee.convertHexToInt(descMap.data[9])
+                        if(logEnable == true) log.debug "${device.displayName} arrived at position:$pos , desc:$description"
                     	levelEventArrived(pos)
                         break;
                     
-                    log.warn "UN-handled CLUSTER_TUYA case  $dp $descMap"  
+                    log.warn "UN-handled CLUSTER_TUYA case " + dp " " descMap
 				}
+                data6 = null
 			}
-         
 		}
         else {
-            //log.warn "UN-Pasred Map $descMap"
+            if(logEnable == true) log.warn "UN-Pasred Map $descMap"
         }
+    descMap = null
 	}
 }
 
-private levelEventMoving(currentLevel) {
-	def lastLevel = device.currentValue("level")
-	if(logEnable) log.debug "${device.displayName} levelEventMoving - currentLevel: ${currentLevel} lastLevel: ${lastLevel}"
+private levelEventMoving(int currentLevel) {
+	int lastLevel = device.currentValue("level")
+	if(logEnable == true) log.debug "${device.displayName} levelEventMoving - targert level: ${currentLevel} lastLevel: ${lastLevel}"
 	if (lastLevel == "undefined" || currentLevel == lastLevel) { //Ignore invalid reports
-		log.debug "${device.displayName} Ignore invalid reports"
-	} else {
+		log.debug "${device.displayName} Ignore invalid reports" + lastLevel
+	} 
+    else {
 		if (lastLevel < currentLevel) {
 			sendEvent([name:"windowShade", value: "opening"])
-		} else if (lastLevel > currentLevel) {
+		} 
+        else if (lastLevel > currentLevel) {
 			sendEvent([name:"windowShade", value: "closing"])
 		}
+        else {} //last and current the same
     }
 }
 
-private levelEventArrived(level) {
-    //debunce start when in revers mode time in mill's
+private levelEventArrived(int level) {
+    if(logEnable == true) log.info "arrived at " + level
+    
+//debunce start when in revers mode time in mill's
     def nowtime = now()
-    if (nowtime-200 <= state.lastmsg){
+    if (nowtime-50 <= state.lastmsg){
         def diff = nowtime-state.lastmsg
-        def nowtimeform = new Date(nowtime)
-        def stateform = new Date(state.lastmsg)
-        def diffform = new Date(diff)
         state.lastmsg = nowtime
-        log.warn "${device.displayName} debouced level = $level, nowtime = ${nowtimeform.format('HH:mm: ss: SSS')}, lastmsg = ${stateform.format('HH:mm: ss: SSS')} differance ${diffform.format('SSS')} millisecondes"
+        log.warn "${device.displayName} debouced level = $level, two message recived in $diff millisecondes filter is set to 50"  //nowtime = ${nowtimeform.format('HH:mm: ss: SSS')}, lastmsg = ${stateform.format('HH:mm: ss: SSS')} differance ${diffform.format('SSS')} millisecondes"
+    return
     }
     state.lastmsg = nowtime
-    //debunce end
-	if (level == 0) { sendEvent(name: "windowShade", value: "closed")} 
+//debunce end
+
+    if (level == 0) { sendEvent(name: "windowShade", value: "closed")} 
     else if (level == 100) { sendEvent(name: "windowShade", value: "open")} 
     else if (level > 0 && level < 100) { sendEvent(name: "windowShade", value: "partially open")} 
     else { sendEvent(name: "windowShade", value: "unknown")}
     
-    sendEvent(name: "level", value: (level))
     sendEvent(name: "position", value: (level))
-    //To enable in GoggleHome
+//To enable in GoggleHome
+    sendEvent(name: "level", value: (level)) //dimmer
     if (level < 100){ sendEvent(name: "switch", value: "on")}
     else {sendEvent(name: "switch", value: "off")}
+//google home end
 }
 
 def close() {
-	if(logEnable) log.info "close()"
-	def currentLevel = device.currentValue("level")
-/*    if (currentLevel == 0) {
+	if(logEnable == true) log.info "close()"
+	//int currentLevel = device.currentValue("level")
+    if (device.currentValue("level") == 0) {
     	sendEvent(name: "windowShade", value: "closed")
         return
     }
-*/
 	sendTuyaCommand("0104", "00", "0102")
 }
 
 def open() {
-	if(logEnable) log.info "open()"
-    def currentLevel = device.currentValue("level")
-/*    if (currentLevel == 100) {
+	if(logEnable == true) log.info "open()"
+    //int currentLevel = device.currentValue("level")
+    if (device.currentValue("level") == 100) {
     	sendEvent(name: "windowShade", value: "open")
         return
     }
-*/
 	sendTuyaCommand("0104", "00", "0100")
 }
 
 def pause() {
-	if(logEnable) log.info "pause()"
+	if(logEnable == true) log.info "pause()"
 	sendTuyaCommand("0104", "00", "0101")
-    
+}
+
+def stopPositionChange(){
+    pause()
+}
+
+def startPositionChange(pos){
+    if (pos == "open") open()
+    else close()
 }
 
 def setLevel(data, rate = null) {
-	if(logEnable) log.info "setLevel("+data+")"
-    def currentLevel = device.currentValue("level")
+	if(logEnable == true) log.info "setLevel("+data+")"
+    int currentLevel = device.currentValue("level")
     if (currentLevel == data) {
     	sendEvent(name: "level", value: currentLevel)
         sendEvent(name: "position", value: currentLevel) //HE capability attribute
-        return
     }
-    sendTuyaCommand("0202", "00", "04000000"+HexUtils.integerToHexString(data.intValue(), 1))
+    else {
+        sendTuyaCommand("0202", "00", "04000000"+HexUtils.integerToHexString(data.intValue(), 1))
+    }
 }
 
 def setPosition(position){ //mc new for HE Commands
-    if(logEnable) log.info "setPos to $position"
-    setLevel(position, null)
+    if(logEnable == true) log.info "setPos to $position"
+    setLevel(position)
 }
 
 def presetPosition() { //custom command preset 
@@ -210,29 +229,35 @@ def updated() {
 }
 def initialize() {
 	// Runs on reboot, or can be triggered manually.
-    def randomSixty = Math.abs(new Random().nextInt() % 60)
+    byte randomSixty = Math.abs(new Random().nextInt() % 60)
 	log.info "Initialize running updated in $randomSixty seconds"
     state.lastmsg = now()
     runIn(randomSixty,updated)
 }
 
-def DirectionSet(Dval) {
-	if(logEnable) log.info "Direction set ${Dval} "
-    //zigbee.command(CLUSTER_TUYA, SETDATA, "00" + zigbee.convertToHexString(rand(256), 2) + "05040001" + Dval)
+private DirectionSet(Dval) {
+	if(logEnable == true) log.info "Direction set ${Dval} "
     sendTuyaCommand("05040001", Dval, "") //not tested
 }
 
 def configure() {
-	log.info "configure()"
+	log.info "configure() running updated"
+    updated()
 }
 
 private sendTuyaCommand(dp, fn, data) {
-	if(logEnable) log.trace "send tuya command ${dp},${fn},${data}"
+	if(logEnable == true) log.trace "send tuya command ${dp},${fn},${data}"
 	zigbee.command(CLUSTER_TUYA, SETDATA, "00" + zigbee.convertToHexString(rand(256), 2) + dp + fn + data)
 }
 
 private rand(n) {
 	return (new Random().nextInt(n))
 }
-def on (){log.warn "$device - some thing thinks im a switch  and is turning me on"}
-def off () {log.warn "$device - some thing thinks im a switch and is turning me off"}
+def on (){
+    if(logEnable == true) log.warn "$device - some thing thinks im a switch  and is turning me on"
+    close()
+}
+def off () {
+    if(logEnable == true) log.warn "$device - some thing thinks im a switch and is turning me off"
+    open()
+}
