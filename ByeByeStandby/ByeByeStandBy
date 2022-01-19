@@ -1,0 +1,49 @@
+/**
+ 
+*/
+
+
+definition(
+    name: "ByeByeStandBy",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "ByeByeStandBy - parent app",
+    category: "Convenience",
+	iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "")
+
+
+preferences {
+     page name: "mainPage", title: "", install: true, uninstall: true
+}
+
+void installed() {
+    log.info "${app.label} Installed"
+    initialize()
+}
+
+void updated() {
+    log.info "${app.label} Updated"
+    initialize()
+}
+
+void initialize() {
+    log.info "There are ${childApps.size()} child apps"
+    childApps.each { child ->
+    	log.info "Child app: ${child.label}"
+    }
+}
+
+def mainPage() {
+    dynamicPage(name: "mainPage") {
+        section("ByeByeStandBy Parent") {
+            paragraph "This app will turn off switch when power has been low for a period of time"
+            paragraph "You select the power reporting switch you wish to control"
+            paragraph "Then select the time which you wish the app to wait till turning off once the power level drops below the value you set"
+		}
+  		section("Manage Children") {
+			app(name: "ByeByeStandBy", appName: "ByeByeStandBy Child", namespace: "Mark-C-UK", title: "<b>Add child</b>", multiple: true)
+		}
+	}
+}
