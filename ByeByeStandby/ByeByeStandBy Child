@@ -1,0 +1,100 @@
+definition(
+    parent: "Mark-C-UK:ByeByeStandBy",
+	name: "ByeByeStandBy Child",
+	namespace: "Mark-C-UK",
+	author: "Mark C",
+	description: "turn off device on standby",
+	category: "Convenience",
+	iconUrl: "",
+	iconX2Url: "",
+    pausable: true
+)
+
+preferences {
+	page(name: "mainPage")
+}
+
+Map mainPage() {
+	dynamicPage(name: "mainPage", title: "Setup", uninstall: true, install: true) {
+		section {
+			input "appName", "text", title: "Name this instance", submitOnChange: true, required: true
+			if(appName) app.updateLabel(appName)
+			input "SwOnOff", "capability.powerMeter", title: "Switches to monitor and control", multiple: false, required: true
+            input "time", "number", title: "time off in min", required: true
+            input "powerlevel", "number", title: "power level to action when under",required: true
+            input "EnbPower", "bool", title: "Enable power monitoring now, on if device is on now, off to wait for an 'on' event", defaultValue: false, submitOnChange: true
+            input "logEnable", "bool", title: "Enable debug logging", defaultValue: false, submitOnChange: true
+		}
+	}
+}
+
+void updated() { 
+    unsubscribe()
+    unschedule()
+	initialize()
+    log.info "updated ${app.label}"
+}
+void installed() {
+    log.info "Installed ${app.label}"
+	initialize()
+}
+void uninstalled(){
+    unschedule()
+	unsubscribe()
+    log.info "uninstalled ${app.label}"
+}
+void initialize() {
+    state.SchOff = false
+	subscribe(SwOnOff, "switch.on", startup)
+    if (settings.EnbPower == true) {
+        subscribe(SwOnOff, "power", PowHand)
+        runIn (30, EnbPowerOff)
+    }
+    if (logEnable==true) {
+        runIn (86400, logsOff)
+        log.info "${app.label} loging will be disabled in 24 hours"
+    }
+    log.info "${app.label} initializing and subscribing"
+}
+def logsOff(){
+    app?.updateSetting("logEnable",[value:"false",type:"bool"])
+    log.warn "${app.label} loging disabled"
+}
+def EnbPowerOff(){ 
+    app?.updateSetting("EnbPower",[value:"false",type:"bool"])
+    if (logEnable == true) log.debug "${app.label} toggling off Enable power monitoring now ${settings.EnbPower}"
+}
+
+void startup(evt){
+    subscribe(SwOnOff, "power", PowHand)
+    subscribe(SwOnOff, "switch.off", turnOff)
+    if (logEnable == true) log.info "${app.label} - device ${evt.device.label} is ${evt.value}, subscribing to power reports for ${SwOnOff}"
+}
+void PowHand(evt){
+    if (state.SchOff == false && Float.parseFloat(evt.value) < settings.powerlevel){
+            state.SchOff = true
+            runIn (time*60,turnOff)
+            if (logEnable == true) log.info "${app.label} - device ${evt.device.label} power is ${evt.value}, <  ${settings.powerlevel}, turning off in ${settings.time*60}s"
+    }
+    else if (state.SchOff == true && settings.powerlevel <= Float.parseFloat(evt.value)){
+            unschedule(turnOff)
+            state.SchOff = false
+            if (logEnable == true) log.info "${app.label} - device ${evt.device.label} power is ${evt.value}, >=  ${settings.powerlevel}, unschduleing off"
+    }
+    else{
+        if (logEnable == true) log.debug "${app.label} - No action - device ${evt.device.label} power is ${evt.value}, setting ${settings.powerlevel}, time ${settings.time*60}s shchdual off is ${state.SchOff}"
+    }
+}
+
+def turnOff(evt){
+    unsubscribe(SwOnOff,"power", PowHand)
+    unsubscribe(SwOnOff,"switch.off", turnOff)
+    if (evt?.value != "off"){
+        log.trace "${app.label} - turning off $SwOnOff"
+        settings.SwOnOff.off()
+    }
+    unschedule(turnOff)
+    state.SchOff = false
+    if (logEnable == true) log.info "${app.label} - cleaing up - event ${evt?.value}"
+}
+            
