@@ -97,4 +97,3 @@ def turnOff(evt){
     state.SchOff = false
     if (logEnable == true) log.info "${app.label} - cleaing up - event ${evt?.value}"
 }
-            
