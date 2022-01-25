@@ -1,0 +1,79 @@
+/**
+ *  **************** Chromecast connect  ****************
+ *
+ */
+
+
+definition(
+    name: "Chromecast connect",
+    namespace: "mark-c-uk",
+    author: "mark c",
+    description: "Keep Google/Nest devices connceted.",
+    category: "Convenience",
+    iconUrl: "",
+    iconX2Url: "",
+    pausable: true
+)
+
+preferences {
+    section("Set you input and output devices for ${app.label}"){
+        input "speaker", "capability.speechSynthesis", title: "Choose your Google/Nest speaker(s)", required: true, multiple: true
+        input "InitRepeat", "number", title: "Initialize Google/Nest devices every X minutes? (recommended: 4) max 59", required: true
+        input "pauseApp", "bool", title: "Pause App", defaultValue:false           
+        input "logEnable", "bool", title: "Enable Debug Logging", description: "Enable logging for debugging.", defaultValue:false
+    }
+}
+
+void installed() {
+    log.debug "Installed with settings: ${settings}"
+	initialize()
+}
+
+void updated() {	
+    log.debug "Updated with settings: ${settings}"
+	unschedule()
+    if(logEnable == true) runIn(3600, logsOff)
+	initialize()
+}
+
+void initialize() {
+    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    if(pauseApp == true){
+        log.info "${app.label} is Paused or Disabled"
+    } else {
+        if(logEnable == null){logEnable = false}
+        runIn(randomSixty ,initializeSpeaker)
+        log.info "${app.label} is initializeing in $randomSixty seconds"
+        schedule("$randomSixty 0/$InitRepeat * 1/1 * ? *", initializeSpeaker)
+    }
+}
+def uninstalled(){
+    unschedule()
+	unsubscribe()
+}
+
+void initializeSpeaker() {
+    if(logEnable == true)log.info "${app.label} doing the busness"
+    if(pauseApp == false) {
+/*         for (dev in settings.speaker) {
+            dev.initialize()
+            //if(logEnable == true)log.info "${app.label} doing the busness on $dev"
+        }
+/*  
+*/
+    settings.speaker.each { it ->
+      it.initialize()
+        if(logEnable == true) log.trace "${app.label} initializing $it"
+        pause(3000)
+    } 
+    }
+    else {
+        log.info "${app.label} is Paused or Disabled" 
+    }
+}
+    
+
+void logsOff() {
+    log.info "${app.label} - Debug logging auto disabled"
+    app?.updateSetting("logEnable",[value:"false",type:"bool"])
+}
