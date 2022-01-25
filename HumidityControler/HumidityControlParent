@@ -1,0 +1,67 @@
+/**
+ 
+*/
+
+
+definition(
+    name: "Humidity Alert Parent",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "Humidity Alert - parent app",
+    category: "Convenience",
+	iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "")
+
+
+preferences {
+     page name: "mainPage", title: "", install: true, uninstall: true
+}
+
+
+def installed() {
+    log.info "Installed with settings: ${settings}"
+    initialize()
+}
+
+
+def updated() {
+    log.info "Updated with settings: ${settings}"
+    unsubscribe()
+    initialize()
+}
+
+
+def initialize() {
+    log.info "There are ${childApps.size()} child apps"
+    childApps.each { child ->
+    	log.info "Child app: ${child.label}"
+    }
+}
+
+
+def installCheck() {         
+	state.appInstalled = app.getInstallationState()
+	
+	if (state.appInstalled != 'COMPLETE') {
+		section{paragraph "Please hit 'Done' to install '${app.label}' parent app "}
+  	}
+  	else {
+    	log.info "Parent Installed OK"
+  	}
+}
+
+def mainPage() {
+    dynamicPage(name: "mainPage") {
+    	installCheck()
+		
+		if (state.appInstalled == 'COMPLETE') {
+			section("Humidity Alert Parent") {
+				paragraph "Notify me when the humidity rises above or falls below the given threshold. It will turn on a switch when it rises above the first threshold and off when it falls below the second threshold."
+			}
+  			section("Manage Children") {
+				app(name: "Humidity Alert Child", appName: "Humidity Alert! child", namespace: "Mark-C-UK", title: "<b>Add child</b>", multiple: true)
+			}
+		}
+	}
+}
