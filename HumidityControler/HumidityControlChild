@@ -1,0 +1,228 @@
+/*
+
+
+*/
+
+definition(
+    parent: "Mark-C-UK:Humidity Alert Parent",
+    name: "Humidity Alert! child",
+    namespace: "Mark-C-UK",
+    author: "Mark",
+    description: "Notify me when the humidity rises above or falls below the given threshold. It will turn on a switch when it rises above the first threshold and off when it falls below the second threshold.",
+    category: "Convenience",
+    iconUrl: " ",
+    iconX2Url: "",
+    pausable: true
+)
+
+
+preferences {
+	section("Monitor the humidity of:") {
+		input "humiditySensor1", "capability.relativeHumidityMeasurement"
+	}
+	section("When the humidity rises above:") {
+		input "humidity1", "number", title: "Percentage ?"
+	}
+    section("When the humidity falls below fix value:") {
+		input "humidity2", "number", title: "Percentage ?"
+	}
+    section("OR When the humidity falls below this device:") {
+		input "humiditySen2", "capability.variable"
+    }
+    section("dwel time befor action:") {
+		input "time", "number", title: "seconds"
+    }
+    section( "Notifications" ) {
+        input "sendPushMessage", "bool", title: "Send a push notification?", required: false, defaultValue: false
+        input "sendPushMessageto", "capability.notification", title: "Send a Push notification to?", multiple: true, required: false
+        input "phone1", "phone", title: "Send a Text Message?", required: false
+    }
+	section("Control this switch:") {
+		input "switch1", "capability.switch", required: false
+	}
+    section("Time out - min :") {
+		input "timeout", "number", title: "Timeout for no humiditity updates when running?", required: false, defaultValue: 30
+	}
+  	section("Only when this switch is OFF") {
+		input "switch2", "capability.switch", title: "this switch when on will stop the app", required: false
+	}
+    section("loging"){
+        input "logEnable", "bool", defaultValue: false, title: "Enable Debug Logging", description: "Enable extra logging"
+    }
+}
+
+def installed() {
+	installer()
+}
+def updated() {
+	unsubscribe()
+    initialize() 
+}
+def uninstalled(){
+    unschedule()
+	unsubscribe()
+}
+
+def initialize() {
+	// Runs on reboot, or can be triggered manually.
+    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+	log.info "Initialize running installer in $randomSixty seconds"
+    runIn(randomSixty,installer)
+}
+    
+def installer(){
+    log.info "installer"
+	subscribe(humiditySensor1, "humidity", humidityHandler)
+    subscribe(switch1, "switch", switchstate)
+    if (humiditySen2 && settings.humidity2 == null) log.info "var in use "+settings.humiditySen2.currentVariable  //+settings.humiditySen2.variable
+    if (state.sstate == null){
+        state.sstate = "off"
+    }
+    if (state.appstate == null){
+        state.appstate = "off"
+    }
+}
+
+void switchstate(evt){
+    state.sstate = evt.value
+    if (state.appstate == "on"){
+    	if (switch2 != null && switch2?.currentSwitch == "on" ) {
+    		state.appstate = "off"
+    		log.warn "Switch event - over ride switch is on app is now '${state.appstate}'"
+        }
+    	else if (evt.value == "off"){
+    		log.trace "${app.label} - App on Some thing else turned fan off, turning ${switch1.label} ON in 5 ... from switchstate method"
+            if (time != null){
+                runIn (time , lagOn)
+            }
+            else {
+                runIn (5 , lagOn)
+            }
+        }
+        /*
+        else { //switch turnd on my other means but nothing to do
+            //sendEvent (name:"Switch Event",  value:"${switch1.label} is ${evt.value}")
+	    }
+        */
+        if (logEnable == true) log.info "Switch Event '${evt.device}' is '${evt.value}', App is '${state.appstate}'last humidity was '${state?.humstate}', switch state is ${state.sstate} "
+    }
+}
+
+void lagOn(){
+    switch1?.on()
+    if (logEnable == true) log.debug "delay over,turning ${switch1.label} on ...  lagOn()"
+}
+
+void humidityHandler(evt) {
+    float currentHumidity = Float.parseFloat(evt.value.replace("%", ""))
+    String traceaction = ""
+
+	if (switch2 != null && switch2?.currentSwitch == "on" ){
+    	if(logEnable == true) log.debug "${switch2} & ${switch2?.currentSwitch}"
+    	if (state.appstate == "on" ){
+        	state.appstate = "off"
+            switch1?.off()
+             log.warn "Humidity event - over ride switch is turning app off"
+        }
+    }
+    else{
+        float hum2 = humidity2
+        if (humidity2 == null)  hum2 = Float.parseFloat(humiditySen2.currentVariable)
+        if (hum2 >= humidity1) hum2 = humidity1-2
+        
+        //if(logEnable == true) log.debug " lower humidity setting is $hum2, Upper humidity setting is ${settings.humidity1}, current humidity is $currentHumidity"
+
+//High ------------------------
+	if (currentHumidity >= settings.humidity1) {
+		if (state.sstate == "on" && state.appstate == "on"){ // everything on - Don't send a continuous stream of text messages
+        	traceaction = "High - everything on already"
+        }
+		else if (state.sstate == "on" && state.appstate == "off"){ //fan on for some other reason
+        	traceaction = "High - switch on but app not send message anyway turning app on"
+            if (sendPushMessage == true ) {send("${humiditySensor1.label} sensed high humidity level of ${evt.value}")}
+            state.appstate = "on"
+        }
+        else { //app off and/or switch off
+        	state.appstate = "on"
+			traceaction = "High - turning on"
+            sendEvent (name:"Switch Event",  value:"${humiditySensor1.label} is ${evt.value}% - ${traceaction}")
+            if (sendPushMessage == true ) {send("${humiditySensor1.label} sensed high humidity level of ${evt.value}")}
+            switch1?.on()
+            log.trace "Humidity Action - ${traceaction}, Reported humidity: '${evt.value}%', Switching on fan, App State is-'${state.appstate}'"
+		}
+		timelag() //if no humidity update in period of time turn app and fan off
+	}
+//Low -------------------
+    else if (currentHumidity <= hum2) {
+		if (state.sstate == "off" && state.appstate == "off"){
+			traceaction = "Low - All off - no action"
+        }
+        else if (state.appstate == "on"){
+        	if (state.sstate == "on") {
+        		traceaction = "Low turning off ${settings?.switch1}"
+                sendEvent (name:"Switch Event",  value:"${humiditySensor1.label} is ${evt.value}% - ${traceaction}")
+                if (sendPushMessage == true ){send("${humiditySensor1.label} sensed low humidity level of ${evt.value}")} // send push
+            	switch1?.off()
+                //log.trace "Humidity Action - ${traceaction}, Reported humidity: '${evt.value}%', Switch is-'${state.sstate}', App State is-'${state.appstate}'"
+        	}
+            else {
+        		traceaction = "Low - ${settings?.switch1} already off, turning off APP"
+        	}
+            if (sendPushMessage == true ){send("${humiditySensor1.label} sensed LOW humidity level of ${evt.value} and de-activating ${settings?.switch1}")} //send push
+            state.appstate = "off"
+            unschedule (timeoff)
+        }
+	}
+// middle --------------------------
+    else {
+    	if (state.sstate == "off" && state.appstate == "on"){
+        	traceaction = "MID - Switch off but app still on, turning on again, reset timer"
+        	if (time != null){
+                runIn (time , lagOn)
+            }
+            else {
+                runIn (5 , lagOn)
+            }
+            timelag()
+     	}
+        else if (state.appstate == "on"){
+        	traceaction = "MID - No action but reset timer"
+            timelag()
+        }
+        else {
+            traceaction = "MID - everything off no action"
+        }
+	}
+    if(logEnable == true) log.trace "Humidity Event- ${traceaction}, Reported humidity:'${evt.value}%',Lower Setting:'$hum2%', Upper Setting:${settings.humidity1}%, Fan Switch:'${state.sstate}', App State:'${state.appstate}'"
+  }
+}
+
+//private 
+void send(msg) {
+    log.trace "sending push message $msg"
+    if (sendPushMessageto != null){
+        sendPushMessageto.deviceNotification("${app.label} $msg")
+    }
+}
+void timelag(){ ///schedule
+    //int lag  = timeout*60 ?: 30*60
+	//runIn (lag , timeoff)
+    runIn (timeout*60 ?: 30*60 , timeoff)
+    if(logEnable == true) log.debug "timelag() runIn ${timeout*60 ?: 30*60} time off()"
+}
+
+void timeoff (){ // don't get a humidity report for 30 min or defined time
+    //int timelag = timeout ?: 30
+    send("time off initated no events for ${timeout ?: 30} min")
+   // if (sendPushMessageto != null){
+   //     sendPushMessageto.deviceNotification("${app.label} time off initated no events for ${timeout ?: 30} min" )
+   // }
+	log.warn "timeoff initated no events for '${timeout ?: 30}' min" 
+    sendEvent (name:"Switch Event",  value:"${switch1.label} timeoff initated no events for '${timeout ?: 30}' min")
+    if (state.appstate == "on"){
+    	state.appstate = "off"
+        if (state.sstate == "on"){
+        	switch1?.off()
+        }
+	}
+}
