@@ -1,0 +1,64 @@
+definition(
+    name: "Lux Average",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "Average Illuminance",
+    category: "Convenience",
+    iconUrl: " ",
+    iconX2Url: "",
+    pausable: true
+)
+
+preferences {
+    section("Set you input and output devices for ${app.label}"){
+		input "luxIn", "capability.illuminanceMeasurement", title: "Lux input devices to average", required: true, multiple: true
+		input "luxOut", "capability.illuminanceMeasurement", title: "Lux output - create a hubitat vitrual illiminance sensor 1st", required: true
+    }
+}
+
+def installed() {
+	installer()
+}
+def uninstalled(){
+    unschedule()
+	unsubscribe()
+}
+def updated() {
+	unsubscribe()
+    installer()
+}
+
+def initialize() { // Runs on startup
+    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    log.info "Initialize running ${app.label} installer in ${randomSixty} seconds"
+    runIn(randomSixty,installer)
+}
+    
+def installer(){
+    log.info "${app.label} installer"
+    if (luxIn && luxOut) {
+        //subscribe(luxIn, "illuminance", luxinput)
+        subscribe(luxIn, "illuminance", buffer)
+        log.info "${app.label} installer subscribing"
+        luxinput()
+        //buffer()
+    }
+}
+
+def luxinput(evt){
+    //log.debug "${app.label} buffer triggerd $evt.device, $evt.value, $evt.name"
+    byte devcount = 0 
+    int luxtotal = 0 
+    for (sensor in settings.luxIn) {
+        devcount += 1
+        luxtotal += sensor.currentIlluminance 
+    }
+    int outlux = luxtotal/devcount
+    //log.debug "${app.label} sending value '${outlux}' to '${settings.luxOut}'"
+    settings.luxOut.setLux(outlux)
+}
+
+def buffer(evt){
+    //log.debug "${app.label} buffer triggerd $evt.device, $evt.value, $evt.name"
+    runIn (60,luxinput)
+}
