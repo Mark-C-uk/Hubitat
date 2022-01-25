@@ -1,131 +1,67 @@
+/**
+ 
+*/
+
+
 definition(
-    parent: "Mark-C-UK:Whats On Parent",
-	name: "Whats On Child",
-	namespace: "Mark-C-UK",
-	author: "Mark C",
-	description: "check what is on",
-	category: "Convenience",
+    name: "Whats On Parent",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "Whats ON - parent app",
+    category: "Convenience",
 	iconUrl: "",
-	iconX2Url: ""
-)
+    iconX2Url: "",
+    iconX3Url: "")
+
 
 preferences {
-	page(name: "mainPage")
+     page name: "mainPage", title: "", install: true, uninstall: true
 }
 
-Map mainPage() {
-	dynamicPage(name: "mainPage", title: "Setup", uninstall: true, install: true) {
-		section {
-			input "appName", "text", title: "Name this instance whats on", submitOnChange: true
-			if(appName) app.updateLabel(appName)
-			input "switches", "capability.switch", title: "Switches to check", multiple: true
-            input "therms", "capability.thermostat", title: "Therm to check", multiple: true
-            input "contats", "capability.contactSensor", title: "contacts to check for open", multiple: true
-			paragraph "For the trigger use a Virtual Switch with auto-off enabled, turning it on checks switches above"
-			input "trigger", "capability.switch", title: "Trigger switch"
-            input "dataName", "text", title: "Enter a name for the Data Device", required:false, submitOnChange:true
-                paragraph "A device will automaticaly be created for you as soon as you click outside of this field"
-                if(dataName) createDataChildDevice()
-            input "dataDev", "capability.actuator", title: "Data Device", required:true, multiple: false, submitOnChange: true
-            input "logEnable", "bool", title: "Enable debug logging", defaultValue: false, submitOnChange: true
+
+def installed() {
+    log.info "Installed with settings: ${settings}"
+    initialize()
+}
+
+
+def updated() {
+    log.info "Updated with settings: ${settings}"
+    unsubscribe()
+    initialize()
+}
+
+
+def initialize() {
+    log.info "There are ${childApps.size()} child apps"
+    childApps.each { child ->
+    	log.info "Child app: ${child.label}"
+    }
+}
+
+
+def installCheck() {         
+	state.appInstalled = app.getInstallationState()
+	
+	if (state.appInstalled != 'COMPLETE') {
+		section{paragraph "Please hit 'Done' to install '${app.label}' parent app "}
+  	}
+  	else {
+    	log.info "Parent Installed OK"
+  	}
+}
+
+def mainPage() {
+    dynamicPage(name: "mainPage") {
+    	installCheck()
+		
+		if (state.appInstalled == 'COMPLETE') {
+			section("Whats on Parent") {
+				paragraph "These apps will allow you to check what is on on the update of a switch"
+			}
+  			section("Manage Children") {
+				app(name: "Whats On Child", appName: "Whats On Child", namespace: "Mark-C-UK", title: "<b>Add child</b>", multiple: true)
+			}
 		}
 	}
-}
-
-void updated() { 
-    unsubscribe()
-	initialize()
-}
-
-void installed() {
-	initialize()
-}
-void uninstalled(){
-    unschedule()
-	unsubscribe()
-}
-
-void initialize() {
-	subscribe(trigger, "switch.on", handler)
-    log.info "${app.label} starting up, running handler in 5"
-    runIn (5, handler)
-}
-
-void handler(evt) {
-    if (logEnable == true) log.trace "${app.label} - handler processing"
-    String whichOn = '<pre align="left">'
-    
-    if (therms != null){
-        Map thermsMap = [:]
-        therms?.each{
-            thermsMap << ["${it.device.displayName}":"${it.currentThermostatMode}"]
-        }
-        whichOn += '<p><b>Therm</b>\n'
-        thermsMap?.sort().each{ key, value ->
-            if (logEnable == true) log.debug "${app.label} - sorted $key $value"
-            if (value != "off"){
-                whichOn += "${key}\n"
-            }
-        }
-        whichOn += "</p>"
-    }
-
-    if (switches != null){
-        Map switchesMap = [:]
-        switches?.each{
-            switchesMap << ["${it.device.displayName}":"${it.currentSwitch}"]
-        }
-        whichOn += '<p><b>Switches</b>\n'
-        switchesMap?.sort().each{ key, value ->
-            if (logEnable == true) log.debug "${app.label} - sorted $key $value"
-            if (value == "on"){
-                whichOn += "${key}\n"
-            }
-        }
-        whichOn += "</p>"
-    }
-    
-    if (contats != null){
-        Map contatsMap = [:]
-        contats?.each{
-            contatsMap << ["${it.device.displayName}":"${it.currentContact}"]
-        }
-        whichOn += '<p><b>Contacts</b>\n'
-        contatsMap?.sort().each{ key, value ->
-            if (logEnable == true) log.debug "${app.label} - sorted $key $value"
-            if (value == "open"){
-                whichOn += "${key}\n"
-            }
-        }
-        whichOn += "</p>"
-    }
-    
-    whichOn    += "</pre>"
-    
-    theCount = whichOn.size()
-    state.theCount = theCount
-    if (logEnable == true) log.debug "${app.label} - char count $theCount"
-    if (theCount > 1024) {
-        whichOn = "to many devices are on"
-        log.warn "${app.label} - char count $theCount"
-    }
-    
-    if (logEnable == true) log.debug "${app.label} - final data $whichOn"
-    dataDev.parse(whichOn)
-}
-
-def createDataChildDevice() {    
-    if (logEnable == true) log.debug "${app.label} - In createDataChildDevice"
-    String statusMessageD = ""
-    if(!getChildDevice(dataName)) {
-        if (logEnable == true) log.debug "${app.label} - In createDataChildDevice - Child device not found - Creating device: ${dataName}"
-        try {
-            addChildDevice("Mark-C-UK", "Whats On Tile", dataName, 1234, ["name": "${dataName}", isComponent: false])
-            if (logEnable == true) log.debug "${app.label} - In createDataChildDevice - Child tile device has been created! (${dataName})"
-            statusMessageD = "<b>Device has been been created. (${dataName})</b>"
-        } catch (e) { log.debug "${app.label} - unable to create data device - ${e}" }
-    } else {
-        statusMessageD = "<b>Device Name (${dataName}) already exists.</b>"
-    }
-    return statusMessageD
 }
