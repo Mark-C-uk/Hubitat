@@ -40,6 +40,10 @@ void updated() {
 void installed() {
 	initialize()
 }
+void uninstalled(){
+    unschedule()
+	unsubscribe()
+}
 
 void initialize() {
 	subscribe(trigger, "switch.on", handler)
@@ -108,8 +112,6 @@ void handler(evt) {
     
     if (logEnable == true) log.debug "${app.label} - final data $whichOn"
     dataDev.parse(whichOn)
-    whichOn = null
-    switchesMap = null
 }
 
 def createDataChildDevice() {    
@@ -127,4 +129,3 @@ def createDataChildDevice() {
     }
     return statusMessageD
 }
-
