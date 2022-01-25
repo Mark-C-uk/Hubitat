@@ -1,0 +1,48 @@
+/**
+ 
+*/
+
+
+definition(
+    name: "DevicePing",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "DevicePing - parent app",
+    category: "Convenience",
+	iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "")
+
+
+preferences {
+     page name: "mainPage", title: "", install: true, uninstall: true
+}
+
+void installed() {
+    log.info "${app.label} Installed"
+    initialize()
+}
+
+void updated() {
+    log.info "${app.label} Updated"
+    initialize()
+}
+
+void initialize() {
+    log.info "There are ${childApps.size()} child apps"
+    childApps.each { child ->
+    	log.info "Child app: ${child.label}"
+    }
+}
+
+def mainPage() {
+    dynamicPage(name: "mainPage") {
+        section("DevicePing Parent") {
+            paragraph "Ping a url/IP"
+            paragraph "if down will toggle switch(s)"
+		}
+  		section("Manage Children") {
+			app(name: "DevicePing", appName: "DevicePing Child", namespace: "Mark-C-UK", title: "<b>Add child</b>", multiple: true)
+		}
+	}
+}
