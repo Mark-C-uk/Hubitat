@@ -1,0 +1,154 @@
+definition(
+    parent: "Mark-C-UK:DevicePing",
+	name: "DevicePing Child",
+	namespace: "Mark-C-UK",
+	author: "Mark C",
+	description: "ping devices and toggles switche(s) when down",
+	category: "Convenience",
+	iconUrl: "",
+	iconX2Url: "",
+    pausable: true
+)
+
+preferences {
+	page(name: "mainPage")
+}
+
+Map mainPage() {
+	dynamicPage(name: "mainPage", title: "Setup", uninstall: true, install: true) {
+		section {
+			input "appName", "text", title: "Name this instance", submitOnChange: true, required: true
+			if(appName) app.updateLabel(appName)
+            input "ipAdd", "string", title: "IP address of device", required:true, submitOnChange: true
+            input("ipAddRout", "string", title: "IP address of router, to test befor sending away", submitOnChange: true)
+			input "togSwitch", "capability.switch", title: "Switches to control", multiple: true, required: true
+            input "pingPeriod", "number", title: "time ping freq", required: true
+            input "numPings", "number", title: "number of pings",required: true
+            input "awayPeriod", "number", title: "missed pings befor action",required: true
+            input "notify", "capability.notification", title: "Select Notification Device", submitOnChange: true, required: false
+            input "logEnable", "bool", title: "Enable debug logging", defaultValue: false, submitOnChange: true
+		}
+	}
+}
+
+void installed() {
+    log.info "Installed ${app.label}"
+	initialize()
+}
+void uninstalled(){
+    unschedule()
+	unsubscribe()
+    log.info "uninstalled ${app.label}"
+}
+void initialize() {
+    if (logEnable==true) { log.info "${app.label} loging will be disabled in 24 hours" }
+    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    log.info "${app.label} initializing, running configure in $randomSixty seconds"
+    runIn(randomSixty,configure)
+}
+def configure() {
+    unschedule()
+    state.away = 0
+    log.trace "${app.label} configure - state away=${state.away} switches to toggle $togSwitch , updated next" 
+    updated()
+}
+void updated() {
+    if (logEnable==true) {
+        log.info "${app.label} loging will be disabled in 24 hours"
+        runIn (86400, logsOff)
+    }
+    state.away = 0
+    if (ipAdd == null){
+        log.warn "${app.label} no ip address"
+        state.validIP = false
+    }
+    else if (validIP(ipAdd) == true){
+        if(logEnable == true) log.debug "${app.label} Device IP address format valid"
+        state.validIP = true
+    }
+    else{
+        log.warn "${app.label} Device IP address format invalid"
+        state.validIP = false
+    }
+    if (numPings == null) numPings = 2
+    if (awayPeriod == null) awayPeriod = 5
+    if (pingPeriod == null) pingPeriod = 60
+    
+    if(state.validIP == true) pinger()
+    log.trace "${app.label} updated with... valid IP=${state.validIP}, debugging=$logEnable, number of pings to send $numPings, number of missed pings before action=$awayPeriod, - ping freq ${pingPeriod}"
+}
+def pinger(){ 
+    if (logEnable == true) log.info "${app.label} Ping process initiating"
+    if (state.responseReady == false){
+        log.warn "${app.label} not ready"
+        if(pingPeriod > 0) runIn(pingPeriod, "pinger")
+        return
+    }
+    if (state.away > awayPeriod){
+        log.warn "${app.label} something went wroung disabled ${state.away} pings"
+        if(notify != null) notify.deviceNotification("${app.label} No event for ${state.away} pings, STOPPING")
+        return
+    }
+    
+    if (sendPing(settings.ipAdd) < 100){
+        if (state.away != 0) state.away = 0
+        if(logEnable == true) log.info "${app.label} good ping for $ipAdd"
+    }
+    else {
+        if(ipAddRout != null && sendPing(settings.ipAddRout) == 100){
+            log.warn "${app.label} Router down"
+            // no point if router is down.. if(notify != null) notify.deviceNotification("${app.label} Router down, away state ${state.away}")
+        }
+        else{
+            if(logEnable == true) log.info "${app.label} missed ping for $ipAdd,  ${state.away} (previous) number of times"
+            state.away += 1
+            if (state.away >= awayPeriod){
+                log.warn "${app.label} missed MAX ping for $ipAdd, ${state.away} number of times toggling $togSwitch"
+                if(notify != null) notify.deviceNotification("${app.label} No event for ${state.away} pings, toggling")
+                toggleSwitchOff()
+            }
+            else {
+                if(logEnable == true) log.debug "${app.label} missed not max yet ping for $ipAdd, current=${state.away} max $awayPeriod number of times"
+            }
+        }
+    }
+    if(pingPeriod > 0) runIn(pingPeriod, "pinger")
+    if(logEnable == true) log.info "${app.label} Next ping in '$pingPeriod' seconds"
+}
+def toggleSwitchOff(){
+    log.trace "${app.label} - toggling $togSwitch off"
+    togSwitch.off()
+    runIn(30,toggleSwitchOn)
+}
+def toggleSwitchOn(){
+    log.trace "${app.label} - toggling $togSwitch on"
+    togSwitch.on()
+}
+
+def sendPing(ipAddress){
+    if(logEnable == true) log.debug "${app.label} pinging...."
+    state.responseReady = false
+    
+    hubitat.helper.NetworkUtils.PingData pingData = hubitat.helper.NetworkUtils.ping(ipAddress, numPings.toInteger())
+    
+    //int pTran = pingData.packetsTransmitted.toInteger()
+    if (pingData.packetsTransmitted.toInteger() == 0){ // 2.2.7.121 bug returns all zeroes on not found
+        pingData.packetsTransmitted = numPings
+        pingData.packetLoss = 100
+    }
+    
+    if(logEnable == true) log.info "${app.label} - Ping Stats for $ipAddress: Transmitted: ${pingData.packetsTransmitted}, Received: ${pingData.packetsReceived}, %Lost: ${pingData.packetLoss}, min= ${pingData.rttMin}, avg= ${pingData.rttAvg}, max= ${pingData.rttMax} ms"
+    state.responseReady = true
+    return pingData.packetLoss
+
+}
+def validIP(ipAddress){
+    regxPattern =/^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+    boolean match = ipAddress ==~ regxPattern
+    return match
+}
+
+def logsOff(){
+    app?.updateSetting("logEnable",[value:"false",type:"bool"])
+    log.warn "${app.label} loging disabled"
+}
