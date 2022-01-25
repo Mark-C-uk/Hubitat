@@ -1,0 +1,70 @@
+definition(
+    parent: "Mark-C-UK:Switch aggregator Parent",
+    name: "Switch aggregator Child",
+    namespace: "Mark-C-UK",
+    author: "Mark-C",
+    description: "agrate switches many to 1 or 1 to many",
+    category: "Convenience",
+    iconUrl: " ",
+    iconX2Url: "",
+    pausable: true
+)
+
+preferences {
+    section("Set your input and output devices"){
+		input "InDevs", "capability.switch", title: "input devices to average", required: true, multiple: true
+		input "OutDev", "capability.switch", title: "output device - create a hubitat vitrual switch 1st", required: true, multiple: true
+        input "logEnable", "bool", title: "Enable debug logging", defaultValue: false
+    }
+}
+
+void installed() {
+	installer()
+}
+void updated() {
+    installer()
+}
+def uninstalled(){
+    unschedule()
+	unsubscribe()
+}
+void initialize() { // Runs on startup
+    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    log.info "Initialize running ${app.label} installer in ${randomSixty} seconds"
+    runIn(randomSixty,installer)
+}
+    
+void installer(){
+    unsubscribe()
+    if (InDevs == true && OutDev == true) {
+        log.info "${app.label} installer subscribing to $InDevs devices(s), output device is $OutDev, logging is $logEnable"
+        subscribe(InDevs, "switch", change)
+        Map evt = [:]
+        evt << ["device" : "${app.label}"]
+		evt << ["value" : "installd/updated"]
+        change(evt)
+    }
+    else { log.warn "${app.label} - installer - nothing sellected"}
+}
+
+void change(evt){
+    if (logEnable == true) log.info "${app.label} change event, device '${evt.device}', event '${evt.value}'"
+    String onoff = "off"
+    if (evt.value == "on"){
+        if (logEnable == true) log.trace "${app.label} - ON"
+        onoff = "on"
+    }
+    else {
+        for (dev in settings.InDevs) {
+            if (logEnable == true) log.trace "${app.label} - checking - ${dev} is ${dev.currentSwitch}"
+            if (dev.currentSwitch == "on"){
+            onoff = "on"
+            }
+        }
+    }
+    //if (logEnable == true) log.debug "${app.label} sending value '${onoff}' to '${settings.OutDev}'"
+    for (dev in settings.OutDev){
+        if (logEnable == true) log.debug "${app.label} sending value '${onoff}' to '$dev'"
+        dev."$onoff"()
+    }
+}
