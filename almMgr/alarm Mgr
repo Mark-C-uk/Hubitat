@@ -1,0 +1,149 @@
+definition(
+    //parent: "Mark-C-UK:**tbc**",
+	name: "alarm Mgr",
+	namespace: "Mark-C-UK",
+	author: "Mark C",
+	description: "do alarm stuff",
+	category: "Convenience",
+	iconUrl: "",
+	iconX2Url: "",
+    pausable: true
+)
+
+preferences {
+	page(name: "mainPage")
+}
+
+Map mainPage() {
+	dynamicPage(name: "mainPage", title: "Setup", uninstall: true, install: true) {
+		section {
+			input 'alarm', 'capability.alarm', title: 'Switches to monitor and control', multiple: false, required: true
+            input 'time', 'number', title: 'time in min to re-arm when the alarm was in armed home and someone comes home', required: false
+            input 'PreSens', 'capability.presenceSensor', title: 'Presense sensors', multiple: true, required: false
+            input 'PDiss', 'bool', title: 'Use presence disarm', defaultValue: false, submitOnChange: true
+            if(PDiss== true){
+                app.updateSetting("Day",[value:"false",type:"bool"])
+                app.updateSetting("Eve",[value:"false",type:"bool"])
+            }
+            input 'PArm', 'bool', title: 'Use presence Arm away', defaultValue: false, submitOnChange: true
+            if(PArm== true){
+                app.updateSetting("Away",[value:"false",type:"bool"])
+            }
+            
+            input 'Day', 'bool', title: 'Use mode to day to disarm', defaultValue: false, submitOnChange: true
+            if(Day== true){
+                app.updateSetting("PDiss",[value:"false",type:"bool"])
+            }
+            input 'Eve', 'bool', title: 'Use mode to Evening to disarm', defaultValue: false, submitOnChange: true
+            if(Eve== true){
+                app.updateSetting("PDiss",[value:"false",type:"bool"])
+            }
+            input 'Night', 'bool', title: 'Use mode to Night to arm home', defaultValue: false, submitOnChange: true
+            input 'Away', 'bool', title: 'Use mode to awary to arm away', defaultValue: false, submitOnChange: true
+            if(Away== true){
+                app.updateSetting("PArm",[value:"false",type:"bool"])
+            }
+            input 'logEnable', 'bool', title: 'Enable logging', defaultValue: false, submitOnChange: true
+		}
+	}
+}
+
+void updated() { 
+    log.info "updated ${app.label}"
+    unsubscribe()
+    unschedule()
+	initialize()
+}
+void installed() {
+    log.info "Installed ${app.label}"
+	initialize()
+}
+void uninstalled(){
+    unschedule()
+	unsubscribe()
+    log.info "uninstalled ${app.label}"
+}
+void initialize() {
+    String currentstate = alarm.currentmodes
+    log.info "${app.label} ${alarm} is $currentstate"
+    if (logEnable==true) {
+        runIn (86400, logsOff)
+        log.info "${app.label} loging will be disabled in 24 hours"
+    }
+    if (time != null && PreSens != null) log.info "${app.label} - auto re arm enabled after $time"
+    if (PDiss == true || PreSens != null) subscribe(PreSens, 'presence.present', PreHandler)    
+    if (PArm == true && PreSens != null) subscribe(PreSens, 'presence.not present', PreHandler)
+    if (Day == true || Eve == true || Night == true || Away == true) subscribe(location, 'mode', modeCh)
+    log.info "${app.label} initializing and subscribing to ${PreSens}"
+}
+void logsOff(){
+    app?.updateSetting("logEnable",[value:"false",type:"bool"])
+    log.warn "${app.label} loging disabled"
+}
+void PreHandler(evt){
+    if (evt.value == "present" && PDiss == true){
+        String currentstate = alarm.currentmodes
+        if (currentstate != 'disarmed'){
+            if (logEnable==true) log.trace "${app.label} disarming because ${evt.device.name} ${evt.value} and alarm is $currentstate"
+            alarm.disarm()
+            if (time != null && currentstate == 'armed home'){
+                if (logEnable==true) log.warn "${app.label} re-arming to HOME in ${time}min"
+                runIn (time*60, ArmHome)
+            }
+        }
+        // else no action as already disarmed
+    }
+    else if (evt.value == 'not present' && PArm == true) {
+        state.pre = false
+        for (com.hubitat.app.DeviceWrapper dev in PreSens) {
+            if (dev.currentValue('presence') == 'present') {
+                if (logEnable==true) log.debug "present $dev"
+                state.pre = true
+            }
+        }
+        if (state.pre != true){
+            if (logEnable==true) log.trace "${app.label} arming"
+            runIn (5, ArmAway)
+        }
+        else {
+            if (logEnable==true) log.info "${app.label} no action someone still home"
+            return
+        }
+    }
+    runIn (2*60, refresh)
+}
+
+void modeCh(evt){
+    //log.debug "mode ${evt.value}"
+    String currentstate = alarm.currentmodes
+    if (evt.value == 'Day' && Day == true && currentstate != 'disarmed' || evt.value == 'Evening' && Eve == true && currentstate != 'disarmed') {
+        if (logEnable==true) log.trace "${app.label} - mode ${evt.value} disarming"
+        alarm.disarm()
+    }
+    else if (evt.value == 'Night' && Night == true && currentstate != 'armed home') {
+        if (logEnable==true) log.trace "${app.label} - mode ${evt.value} arm HOME"
+        runIn (5, ArmHome)
+    }
+    else if (evt.value == 'Away' && Away == true && currentstate != 'armed away'){
+        if (logEnable==true) log.trace "${app.label} - mode ${evt.value} arm AWAY"
+        runIn (5, ArmAway)
+    }
+    runIn (2*60, refresh)
+/*
+location.mode == "Away") {
+location.setMode("Home")
+*/
+}
+
+void ArmHome(){
+    if (logEnable==true) log.trace "${app.label} armed HOME"
+    alarm.armHome()
+}
+void ArmAway(){
+    if (logEnable==true) log.trace "${app.label} armed Away"
+    alarm.armAway()
+}
+void refresh(){
+    if (logEnable==true) log.trace "${app.label} refreshing"
+    alarm.refresh()
+}
