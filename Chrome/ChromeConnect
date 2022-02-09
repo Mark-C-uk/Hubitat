@@ -37,7 +37,8 @@ void updated() {
 }
 
 void initialize() {
-    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    //byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    int randomSixty = 1 + (Math.random() * 58)
     if(pauseApp == true){
         log.info "${app.label} is Paused or Disabled"
     } else {
@@ -53,19 +54,20 @@ def uninstalled(){
 }
 
 void initializeSpeaker() {
-    if(logEnable == true)log.info "${app.label} doing the busness"
+    if(logEnable == true) log.info "${app.label} doing the busness"
     if(pauseApp == false) {
-/*         for (dev in settings.speaker) {
+         for (com.hubitat.app.DeviceWrapper dev in settings.speaker) {
             dev.initialize()
-            //if(logEnable == true)log.info "${app.label} doing the busness on $dev"
+            if(logEnable == true) log.info "${app.label} doing the busness on $dev"
+            pause(3000)
         }
-/*  
-*/
+/*        
     settings.speaker.each { it ->
       it.initialize()
         if(logEnable == true) log.trace "${app.label} initializing $it"
         pause(3000)
     } 
+*/
     }
     else {
         log.info "${app.label} is Paused or Disabled" 
@@ -77,3 +79,4 @@ void logsOff() {
     log.info "${app.label} - Debug logging auto disabled"
     app?.updateSetting("logEnable",[value:"false",type:"bool"])
 }
+
