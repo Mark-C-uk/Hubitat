@@ -20,6 +20,8 @@ metadata {
         attribute "autolock","String"
         attribute "childLock","String"
         
+        command "calibrate", [[name:"Set Calibration Temperature", type: "NUMBER", description: "Set the current temperature to a corrected value" ]]
+        
     fingerprint endpointId: "01", profileId: "0104", inClusters: "0000,0004,0005,EF00", outClusters: "0019,000A", manufacturer: "_TZE200_ckud7u2l", model: "TS0601", deviceJoinName: "Zigbee - Tuya TRV" 
     // Moes TRV
     fingerprint endpointId: "01", profileId: "0104", inClusters: "0000,000A,0004,0005,EF00", outClusters: "0019", manufacturer: "_TZE200_zion52ef", model: "TS0601", deviceJoinName: "Zigbee - Tuya TRV"
@@ -540,6 +542,33 @@ def configure(){
     updated()
 
 }
+
+def calibrate(preciseDegrees) { 
+    log.debug "calibrate"
+    
+    if (preciseDegrees != null) {
+        def dp = "2C02"
+        def fn = "00"
+        def SP = preciseDegrees *10
+        def X = (SP / 256).intValue()
+        def Y = SP.intValue() % 256
+
+        log.debug "SP: " + SP +", X: " + X + ", Y: " + Y
+	
+        if(isMoesModel() == true)
+        {
+            dp = "1002"
+            SP = preciseDegrees *2
+            log.info "Moes Model Calibration (not supported)"
+            return
+        }
+
+        def data = "040000" + zigbee.convertToHexString(X.intValue(), 2) + zigbee.convertToHexString(Y.intValue(), 2)
+	    log.info "calibration temp set to ${preciseDegrees}"
+	    sendTuyaCommand(dp,fn,data)
+	}
+}
+
 void updateDataFromSimpleDescriptorData(List<String> data) {
     Map<String,String> sdi = parseSimpleDescriptorData(data)
     if(sdi != [:]) {
