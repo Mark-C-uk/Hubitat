@@ -5,7 +5,7 @@
 import hubitat.helper.HexUtils
 
 metadata {
-	definition (name: "Zigbee - Tuya TRV DEV", namespace: "Mark-C-uk", author: "MarkC") {
+	definition (name: "Zigbee - Tuya TRV", namespace: "Mark-C-uk", author: "MarkC") {
         capability "Configuration"
         capability "TemperatureMeasurement"
         capability "Thermostat"
