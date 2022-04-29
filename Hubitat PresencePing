@@ -1,5 +1,5 @@
 /*
- * Hubitat presence Ping
+ * Hubitat presence Ping (https://raw.githubusercontent.com/Mark-C-uk/Hubitat/master/Hubitat%20PresencePing)
  *
  *  Licensed Virtual the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -31,6 +31,7 @@ metadata {
         capability "Configuration"
         capability "PresenceSensor"
         capability "Initialize"
+        capability "Switch"
        
         attribute "pingData", "string"
         attribute "awaycount", "number"
@@ -58,7 +59,11 @@ def configure() {
     unschedule()
     if (state.away == null) state.away = 0
     updateAttr("pingData"," ")
-    if (device.currentValue("presence") == null) updateAttr("presence","not present")
+    if (device.currentValue("presence") == null) 
+    {
+        updateAttr("presence","not present")
+        updateAttr("switch", "on")
+    }
     log.debug "configure - state away=${state.away} current presence ${device.currentValue("presence")}, updated next" 
     updated()
 }
@@ -129,6 +134,7 @@ def pinger(){
         if (state.away != 0) state.away = 0
         if(settings.textLoggingEnabled == true) log.debug "Presence 'present' for $ipAdd"
         updateAttr("presence","present")
+        updateAttr("switch","on")
         updateAttr("awaycount", state.away)
     }
     else {
@@ -145,6 +151,7 @@ def pinger(){
                     if (sendPing(ipAddRout) < 100){
                         if(settings.textLoggingEnabled == true) log.debug "Presence set to 'not present' for $ipAdd"
                         updateAttr("presence","not present")
+                        updateAttr("switch","off")
                     }
                     else {
                         updateAttr("pingData","router not present")
@@ -152,6 +159,7 @@ def pinger(){
                 } //end use router option
                 else {
                     updateAttr("presence","not present")
+                    updateAttr("switch","on")
                 }
                 if(settings.textLoggingEnabled == true) log.debug "not present' for $ipAdd, ${state.away} number of times"
             }
