@@ -1,0 +1,46 @@
+/*
+
+
+*/
+
+metadata {
+    definition (
+		name: "Hubitat presence Combined Driver", 
+		namespace: "mark-c-uk", 
+		author: "mark-c-uk",
+	    importUrl:""
+    ){
+        capability "PresenceSensor"
+        capability "Notification"
+        command "arrived"
+        command "departed"
+        attribute "status", "string"
+    }
+}
+
+preferences {
+	input("img", "text", title: "image for present?(select attribute status)")
+    input("loggEnable", "bool", title: "Enable logging?")
+    
+}
+
+def installed() {
+	log.info "installed()"
+}
+def initialize(){
+    log.info "${device.displayName} initializing, nothing to do"
+}
+def deviceNotification(text){
+	if (loggEnable == true) log.info "${device.displayName} Notification message recived $text"
+	sendEvent(name:'notification', value:text)
+}
+def arrived(String msg = ''){
+	if (loggEnable == true) log.info "${device.displayName} arrived $msg"
+	sendEvent(name:'presence', value:'present', descriptionText:msg )
+    if (img != null) sendEvent(name:'status', value:"<center> <img src='" +img +"'>")
+}
+def departed(String msg = ''){
+	if (loggEnable == true) log.info "${device.displayName} departed $msg"
+	sendEvent(name:'presence', value:'not present', descriptionText:msg )
+    if (img != null) sendEvent(name:'status', value:'away')//state.clear
+}
