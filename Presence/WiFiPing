@@ -1,0 +1,198 @@
+/*
+ * Hubitat presence Ping
+ *
+ *  Licensed Virtual the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ *
+ *  Change History:
+ *
+ *        Date        Who            What
+ *        ----        ---            ----
+
+        2021-11-05  thebearmay     Add Text Logging option
+        2022-01-03    mark-c-uk    striped down to work as presance sensor
+ */
+
+metadata {
+    definition (
+		name: "Hubitat presence Ping", 
+		namespace: "mark-c-uk", 
+		author: "mark-c-uk",
+	        importUrl:"",
+	    	//singleThreaded: true
+	) {
+        capability "Actuator"
+        capability "Configuration"
+        capability "PresenceSensor"
+        capability "Initialize"
+       
+        attribute "pingData", "string"
+        attribute "awaycount", "number"
+            
+    }   
+}
+
+preferences {
+    input("ipAdd", "string", title: "IP address of device", required:true, submitOnChange: true)
+    input("ipAddRout", "string", title: "IP address of router, to test befor sending away", submitOnChange: true)
+    input("numPings", "number", title: "Number of pings to issue", defaultValue:2, required:true, submitOnChange:true, range: "1..5")
+    input("pingPeriod", "number", title: "Away Ping Repeat in Seconds,Zero to disable", defaultValue: 30, required:true, submitOnChange: true)
+    input("pingPeriodHome", "number", title: "Home Ping Repeat in Seconds", defaultValue: 310, required:true, submitOnChange: true)
+    input("awayPeriod", "number", title: "number of missed pings to be away", defaultValue: 5, required:true, submitOnChange: true)
+    input("debugEnable", "bool", title: "Enable debug logging?")
+    input("textLoggingEnabled", "bool", title: "Enable Text Logging", defaultValue:false)
+}
+
+def installed() {
+    state.away = 0
+    device.updateSetting('numPings',[value:2,type:'number'])
+    device.updateSetting('awayPeriod',[value:5,type:'number'])
+    device.updateSetting('pingPeriod',[value:30,type:'number'])
+    device.updateSetting('pingPeriodHome',[value:310,type:'number'])
+    device.updateSetting('debugEnable',[value:'false',type:'bool'])
+	log.trace 'installed()'
+}
+
+def configure() {
+    unschedule()
+    updateAttr('pingData','')
+    if (device.currentValue('presence') == null) updateAttr('presence','not present')
+    log.trace "configure - state away=${state.away} current presence ${device.currentValue("presence")}, updated next" 
+    updated()
+}
+
+def initialize(){
+    // Runs on reboot, or can be triggered manually.
+    //byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    int randomSixty = 1 + (Math.random() * 58)
+	log.info "Initialize running configure in $randomSixty seconds"
+    state.away = 0
+    runIn(randomSixty,configure)
+}
+def updated(){
+    state.away = 0
+    if (ipAdd == null){
+        log.warn 'no ip address'
+        updateAttr('pingData', 'no Device IP address')
+        state.validIP = false
+    }
+    else if (validIP(ipAdd) == true){
+        if(debugEnable == true) log.info 'Device IP address format valid'
+        updateAttr('pingData', 'Device IP address format valid')
+        state.validIP = true
+    }
+    else{
+        log.warn 'Device IP address format invalid'
+        updateAttr('pingData', 'Device IP address format invalid')
+        state.validIP = false
+    }
+             
+    if (ipAddRout == null){
+        log.warn 'no ip address for router router check not used'
+        state.router = false
+    }
+    else if (validIP(ipAddRout) == true){
+        if(debugEnable == true) log.info 'router IP address format valid'
+        state.router = true
+    }
+    else{
+        log.warn 'router IP address format invalid'
+        state.router = false
+    }
+	if(debugEnable == true) runIn(1800,logsOff)
+    
+    log.trace "updated with... valid IP=${state.validIP}, router checking=${state.router}, debugging=$debugEnable, number of pings to send $numPings, number of missed pings before away=$awayPeriod, ping freq- home ${pingPeriodHome} - away ${pingPeriod}"
+    
+    if(state.validIP == true) pinger()
+}
+
+def refresh() {
+	unschedule(refresh)
+}
+             
+def updateAttr(aKey, aValue){
+    sendEvent(name:aKey, value:aValue)
+}
+
+def pinger(){ 
+    int pingPeriodMod 
+    if (settings.debugEnable == true) log.info 'Ping started'
+    if (state.responseReady == false){
+        log.warn 'not ready'
+        if(pingPeriod > 0) runIn(pingPeriod, 'pinger')
+        return
+    }
+    if (sendPing(settings.ipAdd) < 100){
+        pingPeriodMod = pingPeriodHome // when home dont ping as often
+        if (state.away != 0) state.away = 0
+        if(settings.textLoggingEnabled == true) log.info "Presence 'present' for $ipAdd"
+        updateAttr('presence','present')
+        updateAttr('awaycount', state.away)
+    }
+    else {
+        pingPeriodMod = pingPeriod
+        if (device.currentValue('presence') == 'not present'){
+            if(settings.textLoggingEnabled == true) log.warn "Presence not present already $ipAdd, ${state.away} number of times"
+        }
+        else{
+            state.away += 1
+            updateAttr('awaycount', state.away)
+            if(settings.debugEnable == true) log.warn "Presence not presentfor $ipAdd , NP ${state.away}"
+            if (state.away > awayPeriod){
+                if (state.router == true){ // start use router option
+                    if (sendPing(ipAddRout) < 100){
+                        if(settings.textLoggingEnabled == true) log.info "router is present"
+                        updateAttr('presence','not present')
+                    }
+                    else {
+                        updateAttr('pingData','router not present')
+                        log.warn "router is NOT present"
+                    }
+                } //end use router option
+                else {
+                    updateAttr('presence','not present')
+                }
+                //if(settings.textLoggingEnabled == true) log.debug "> state.away not present' for $ipAdd, ${state.away} number of times"
+            }
+            //if(settings.textLoggingEnabled == true) log.warn "not present' for $ipAdd, ${state.away} number of times"
+        }
+    }
+    if(settings.pingPeriod > 0) runIn(pingPeriodMod, 'pinger')
+    if(settings.textLoggingEnabled == true) log.info "Next ping in '$pingPeriodMod' seconds"
+}
+             
+def sendPing(ipAddress){
+            if(debugEnable == true) log.debug "Hub pinging $ipAddress"
+            state.responseReady = false
+    
+            hubitat.helper.NetworkUtils.PingData pingData = hubitat.helper.NetworkUtils.ping(ipAddress, numPings.toInteger())
+           // int pTran = pingData.packetsTransmitted.toInteger()
+            if (pingData.packetsTransmitted.toInteger() == 0){ // 2.2.7.121 bug returns all zeroes on not found
+                pingData.packetsTransmitted = numPings
+                pingData.packetLoss = 100
+            }
+  
+            //String pingStats = "Transmitted: ${pingData.packetsTransmitted}, Received: ${pingData.packetsReceived}, %Lost: ${pingData.packetLoss}"
+    if(textLoggingEnabled == true) log.info "Ping Stats for $ipAddress: Transmitted: ${pingData.packetsTransmitted}, Received: ${pingData.packetsReceived}, %Lost: ${pingData.packetLoss}, min= ${pingData.rttMin}, avg= ${pingData.rttAvg}, max= ${pingData.rttMax} ms"
+            //updateAttr("pingData", "$ipAddress: $pingStats") 
+    state.responseReady = true
+    return pingData.packetLoss
+
+}
+       
+def validIP(ipAddress){
+    regxPattern =/^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+    boolean match = ipAddress ==~ regxPattern
+    return match
+}
+
+
+void logsOff(){
+     device.updateSetting('debugEnable',[value:'false',type:'bool'])
+}
