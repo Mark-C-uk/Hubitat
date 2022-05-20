@@ -42,7 +42,8 @@ void uninstalled(){
 }
 void initialize() {
     if (logEnable==true) { log.info "${app.label} loging will be disabled in 24 hours" }
-    byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    //byte randomSixty = Math.abs(new Random().nextInt() % 60)
+    int randomSixty = 1 + (Math.random() * 58)
     log.info "${app.label} initializing, running configure in $randomSixty seconds"
     runIn(randomSixty,configure)
 }
@@ -63,7 +64,7 @@ void updated() {
         state.validIP = false
     }
     else if (validIP(ipAdd) == true){
-        if(logEnable == true) log.debug "${app.label} Device IP address format valid"
+        if(logEnable == true) log.info "${app.label} Device IP address format valid"
         state.validIP = true
     }
     else{
@@ -73,15 +74,15 @@ void updated() {
     if (numPings == null) numPings = 2
     if (awayPeriod == null) awayPeriod = 5
     if (pingPeriod == null) pingPeriod = 60
-    
-    if(state.validIP == true) pinger()
-    log.trace "${app.label} updated with... valid IP=${state.validIP}, debugging=$logEnable, number of pings to send $numPings, number of missed pings before action=$awayPeriod, - ping freq ${pingPeriod}"
+    log.info "${app.label} updated with... valid IP=${state.validIP}, debugging=$logEnable, number of pings to send $numPings, number of missed pings before action=$awayPeriod, - ping freq ${pingPeriod}"
+    if(state.validIP == true) pinger()    
 }
+
 def pinger(){ 
-    if (logEnable == true) log.info "${app.label} Ping process initiating"
+    if (logEnable == true) log.info "${app.label} Ping process starting"
     if (state.responseReady == false){
         log.warn "${app.label} not ready"
-        if(pingPeriod > 0) runIn(pingPeriod, "pinger")
+        if(pingPeriod > 0) runIn(pingPeriod, 'pinger')
         return
     }
     if (state.away > awayPeriod){
@@ -100,7 +101,7 @@ def pinger(){
             // no point if router is down.. if(notify != null) notify.deviceNotification("${app.label} Router down, away state ${state.away}")
         }
         else{
-            if(logEnable == true) log.info "${app.label} missed ping for $ipAdd,  ${state.away} (previous) number of times"
+            if(logEnable == true) log.warn "${app.label} missed ping for $ipAdd,  ${state.away} (previous) number of times"
             state.away += 1
             if (state.away >= awayPeriod){
                 log.warn "${app.label} missed MAX ping for $ipAdd, ${state.away} number of times toggling $togSwitch"
@@ -112,7 +113,7 @@ def pinger(){
             }
         }
     }
-    if(pingPeriod > 0) runIn(pingPeriod, "pinger")
+    if(pingPeriod > 0) runIn(pingPeriod, 'pinger')
     if(logEnable == true) log.info "${app.label} Next ping in '$pingPeriod' seconds"
 }
 def toggleSwitchOff(){
@@ -126,7 +127,7 @@ def toggleSwitchOn(){
 }
 
 def sendPing(ipAddress){
-    if(logEnable == true) log.debug "${app.label} pinging...."
+    if(logEnable == true) log.trace "${app.label} pinging....${ipAddress}"
     state.responseReady = false
     
     hubitat.helper.NetworkUtils.PingData pingData = hubitat.helper.NetworkUtils.ping(ipAddress, numPings.toInteger())
