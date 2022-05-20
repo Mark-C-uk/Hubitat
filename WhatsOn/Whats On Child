@@ -53,61 +53,87 @@ void initialize() {
 
 void handler(evt) {
     if (logEnable == true) log.trace "${app.label} - handler processing"
-    String whichOn = '<pre align="left">'
+    String whichOn = "<div style='overflow:auto;height:95%'><pre align='left'><style>p1{font-size:2vmin;}</style>"
     
     if (therms != null){
-        Map thermsMap = [:]
-        therms?.each{
-            thermsMap << ["${it.device.displayName}":"${it.currentThermostatMode}"]
-        }
-        whichOn += '<p><b>Therm</b>\n'
-        thermsMap?.sort().each{ key, value ->
-            if (logEnable == true) log.debug "${app.label} - sorted $key $value"
-            if (value != "off"){
-                whichOn += "${key}\n"
+        //Map thermsMap = [:]
+        List thermsMap = []
+        for (com.hubitat.app.DeviceWrapper dev in therms) {
+            if (dev.currentThermostatMode !='off'){
+                //thermsMap << ["${dev.device.displayName}":"${dev.currentThermostatMode}"]
+                thermsMap << dev.device.displayName
             }
         }
-        whichOn += "</p>"
+//        therms?.each {
+//            thermsMap << ["${it.device.displayName}":"${it.currentThermostatMode}"]
+//        }
+        whichOn += '<p1><b>Therm</b>\n'
+        //thermsMap?.sort().each{ key, value ->
+        thermsMap?.sort().each{
+            if (logEnable == true) log.debug "${app.label} - sorted $thermsMap"
+            //if (value != 'off'){
+            //whichOn += "${key}\n"
+            whichOn += "${it}\n"
+            //}
+        }
+        whichOn += '</p1>'
     }
 
     if (switches != null){
-        Map switchesMap = [:]
-        switches?.each{
-            switchesMap << ["${it.device.displayName}":"${it.currentSwitch}"]
-        }
-        whichOn += '<p><b>Switches</b>\n'
-        switchesMap?.sort().each{ key, value ->
-            if (logEnable == true) log.debug "${app.label} - sorted $key $value"
-            if (value == "on"){
-                whichOn += "${key}\n"
+        //Map switchesMap = [:]
+        List switchesMap = []
+        for (com.hubitat.app.DeviceWrapper dev in switches) {
+            if (dev.currentSwitch == 'on'){
+                //switchesMap << ["${dev.device.displayName}":"${dev.currentSwitch}"]
+                switchesMap << dev.device.displayName
             }
         }
-        whichOn += "</p>"
+//        switches?.each {
+//            switchesMap << ["${it.device.displayName}":"${it.currentSwitch}"]
+//        }
+        whichOn += '<p1><b>Switches</b>\n'
+        //switchesMap?.sort().each{ key, value ->
+        switchesMap?.sort().each{ 
+            whichOn += "${it}\n"
+            if (logEnable == true) log.debug "${app.label} - sorted $switchesMap"
+            //if (value == 'on'){
+                //whichOn += "${key}\n"
+           // }
+        }
+        whichOn += '</p1>'
     }
     
     if (contats != null){
-        Map contatsMap = [:]
-        contats?.each{
-            contatsMap << ["${it.device.displayName}":"${it.currentContact}"]
-        }
-        whichOn += '<p><b>Contacts</b>\n'
-        contatsMap?.sort().each{ key, value ->
-            if (logEnable == true) log.debug "${app.label} - sorted $key $value"
-            if (value == "open"){
-                whichOn += "${key}\n"
+        //Map contatsMap = [:]
+        List contatsMap = []
+        for (com.hubitat.app.DeviceWrapper dev in contats) {
+            //contatsMap << ["${dev.device.displayName}":"${dev.currentContact}"]
+            if (dev.currentContact == 'open'){
+                contatsMap << dev.device.displayName
             }
         }
-        whichOn += "</p>"
+//        contats?.each{
+//            contatsMap << ["${it.device.displayName}":"${it.currentContact}"]
+//       }
+        whichOn += '<p1><b>Contacts</b>\n'
+        //contatsMap?.sort().each{ key, value ->
+        contatsMap?.sort().each{
+            if (logEnable == true) log.debug "${app.label} - sorted $contatsMap"
+            //if (value == 'open'){
+            //    whichOn += "${key}\n"
+            //}
+            whichOn += "${it}\n"
+        }
+        whichOn += '</p1>'
     }
     
-    whichOn    += "</pre>"
+    whichOn    += '</pre></div>'
     
-    theCount = whichOn.size()
-    state.theCount = theCount
-    if (logEnable == true) log.debug "${app.label} - char count $theCount"
-    if (theCount > 1024) {
-        whichOn = "to many devices are on"
-        log.warn "${app.label} - char count $theCount"
+    state.theCount = whichOn.size()
+    if (logEnable == true) log.debug "${app.label} - char count ${state.theCount}"
+    if (state.theCount > 1024) {
+        whichOn = 'to many devices'
+        log.warn "${app.label} - char count ${state.theCount}"
     }
     
     if (logEnable == true) log.debug "${app.label} - final data $whichOn"
@@ -116,7 +142,7 @@ void handler(evt) {
 
 def createDataChildDevice() {    
     if (logEnable == true) log.debug "${app.label} - In createDataChildDevice"
-    String statusMessageD = ""
+    String statusMessageD = ''
     if(!getChildDevice(dataName)) {
         if (logEnable == true) log.debug "${app.label} - In createDataChildDevice - Child device not found - Creating device: ${dataName}"
         try {
@@ -129,3 +155,4 @@ def createDataChildDevice() {
     }
     return statusMessageD
 }
+
