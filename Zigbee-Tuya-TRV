@@ -10,7 +10,6 @@ metadata {
         capability "TemperatureMeasurement"
         capability "Thermostat"
         capability "ThermostatHeatingSetpoint"
-        capability "ThermostatCoolingSetpoint"
         capability "ThermostatSetpoint"
         capability "Refresh"
         capability "Battery"
@@ -19,6 +18,9 @@ metadata {
         attribute "WindowOpenDetection","String"
         attribute "autolock","String"
         attribute "childLock","String"
+        attribute "temperatureCorrection","Integer"
+        
+        command "setTemperatureCorrection", [[name:"Set Temperature Correction", type: "INTEGER", description: "Set the temperature correction applied to the reported temperature" ]]
         
     fingerprint endpointId: "01", profileId: "0104", inClusters: "0000,0004,0005,EF00", outClusters: "0019,000A", manufacturer: "_TZE200_ckud7u2l", model: "TS0601", deviceJoinName: "Zigbee - Tuya TRV" 
     // Moes TRV
@@ -51,7 +53,7 @@ ArrayList<String> parse(String description) {
                 log.warn "encoding: 42 parse 37 IF true"
             } 
             else {
-                msgMap = zigbee.parseDescriptionAsMap(description) //modle name
+                msgMap = zigbee.parseDescriptionAsMap(description) //model name
                 log.warn "encoding: 42 parse 51 ELSE true"
             }
         } 
@@ -60,7 +62,7 @@ ArrayList<String> parse(String description) {
         }
     
         if(msgMap.containsKey("encoding") && msgMap.containsKey("value") && msgMap["encoding"] != "41" && msgMap["encoding"] != "42") {
-            log.warn "pase lin 59 used - ${description}"
+            log.warn "parse line 59 used - ${description}"
             msgMap["valueParsed"] = zigbee_generic_decodeZigbeeData(msgMap["value"], msgMap["encoding"])
         }
         
@@ -238,8 +240,18 @@ ArrayList<String> parse(String description) {
                             break
         //// Temperature correction reporting ---DEV   
                             case '2C02': //Temperature correction reporting
-                                String temperatureCorr = HexUtils.hexStringToInt(data[9])/ 10
+                                String temperatureCorr = 0
+                                String temp = data[9]
+                                
+                                if(data[8] == "FF"){
+                                    temperatureCorr = (HexUtils.hexStringToInt(temp) - 256) / 10
+                                }
+                                else {
+                                    temperatureCorr = HexUtils.hexStringToInt(temp)/  10
+                                }
+                            
                                 logging("${device.displayName} Temp correction reporting DEV STILL, ${temperatureCorr}, data ${msgMap["data"]}")
+                                sendEvent(name: "temperatureCorrection", value: temperatureCorr, unit: "C")
                             break
          // Child lock --- DEV                   
                             case '0701': // Child lock
@@ -269,7 +281,7 @@ ArrayList<String> parse(String description) {
                             break
                             case '6800': //window open detection
                                 String WinTemp = HexUtils.hexStringToInt(data[7])
-                                String WinMink = HexUtils.hexStringToInt(data[8])
+                                String WinMin = HexUtils.hexStringToInt(data[8])
                                 logging("${device.displayName} window open detection ${WinTemp}deg in ${WinMin}min will trigger shutdown")
                                 sendEvent(name: "WindowOpenDetection", value: "${WinTemp}deg in ${WinMin}min")
                             break
@@ -517,29 +529,58 @@ def setThermostatMode(String value) {
     }
 }
 
+def setTemperatureCorrection(offset) { 
+    if(offset > 9 || offset < -9){
+        log.info "Unsupported offset value. Supported range is -9 to +9."
+        return
+    }
+    
+    if (offset != null) {
+        def dp = "2C02"
+        def fn = "00"
+        def SP = offset * 10
+        def X = SP >= 0 ? "04000000" : "04"
+        def Y = HexUtils.integerToHexString(SP, 1)
+
+        log.debug "SP: " + SP +", X: " + X + ", Y: " + Y
+        
+        if(isMoesModel() == true)
+        {
+            dp = "1002"
+            SP = offset *2
+            log.info "Moes Model Calibration (not supported)"
+            return
+        }
+
+        def data = X + Y
+	    log.info "calibration temp set to ${offset}"
+	    sendTuyaCommand(dp,fn,data)
+	}
+}
+
 def updated() {
-    sendEvent(name: "supportedThermostatFanModes", value: [""])
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
     sendEvent(name: "thermostatFanMode", value: "off")
     log.info "${device.displayName} updated..."
 }
+
 def installed() {
-    sendEvent(name: "supportedThermostatFanModes", value: [""])
     sendEvent(name: "supportedThermostatModes", value: ["off", "heat", "auto"] )
     sendEvent(name: "thermostatFanMode", value: "auto")
     
 }
+
 def configure(){    
     log.warn "configure..."
     runIn(1800,logsOff)    
 	//binding to Thermostat cluster"
     // Set unused default values (for Google Home Integration)
     sendEvent(name: "coolingSetpoint", value: "30")
-    sendEvent(name: "thermostatFanMode", value:"auto")
     updateDataValue("lastRunningMode", "heat") // heat is the only compatible mode for this device
     updated()
 
 }
+
 void updateDataFromSimpleDescriptorData(List<String> data) {
     Map<String,String> sdi = parseSimpleDescriptorData(data)
     if(sdi != [:]) {
@@ -575,24 +616,8 @@ def setCoolingSetpoint(degrees) {
     log.info "setCoolingSetpoint is not available for this device"
 }
 
-def fanAuto() {
-    log.info "fanAuto mode is not available for this device"
-}
-
-def fanCirculate(){
-    log.info "fanCirculate mode is not available for this device"
-}
-
-def fanOn(){
-    log.info "fanOn mode is not available for this device"
-}
-
 def setSchedule(JSON_OBJECT){
     log.info "setSchedule is not available for this device"
-}
-
-def setThermostatFanMode(fanmode){
-    log.info "setThermostatFanMode is not available for this device"
 }
 
 
