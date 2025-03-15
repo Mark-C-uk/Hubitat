@@ -1,128 +1,55 @@
+/**
+ 
+*/
+
+
 definition(
-    parent: "Mark-C-UK:At Home Lights Parent",
-    name: "At Home Lights",
+    name: "At Home Lights Parent",
     namespace: "Mark-C-UK",
     author: "Mark C",
-    description: "switch things on and off at random",
+    description: "At Home Lights Parent app",
     category: "Convenience",
-    iconUrl: " ",
+	iconUrl: "",
     iconX2Url: "",
-    pausable: true
-)
+    iconX3Url: "")
+
 
 preferences {
-    section("Set your input and output devices"){
-        input "appName", "text", title: "Name this instance", submitOnChange: true, required: true
-			if(appName) app.updateLabel(appName)
-		input 'mastSwitch', 'capability.switch', title: 'master switch to control the app', required: true, multiple: false
-		input 'lightControl', 'capability.switch', title: 'lights to control', required: true, multiple: true
-        input 'time', 'number', title: 'time in min to have lights on or off' , required: true
-        input 'timeRan', 'number', title: 'time in seconds to randomise the lights + or - (time in seconds MUST be smaller than time to above)', required: true
-        input 'dimValue', 'number', title: 'if the device is a dimmer and you want it setting to a specific value', required: false
-        input "logEnable", "bool", title: "Enable info logging", defaultValue: false, submitOnChange: true
-        input "immediatOff", "bool", title: "When master switch turns off immediately turn off lights", defaultValue: false, submitOnChange: true
-        input "DoubleCheckAllOff", "bool", title: "after it is deactived resend the off commands at next schdauled run - belt n braces off", defaultValue: false, submitOnChange: true
-    }
+     page name: "mainPage", title: "", install: true, uninstall: true
 }
-
 def installed() {
-	installer()
-}
-def uninstalled(){
-	unsubscribe()
-    unschedule()
+    log.info "Installed with settings: ${settings}"
+    initialize()
 }
 def updated() {
-    log.info "${app.label} Updated"
+    log.info "${app.label} Updated with settings: ${settings}"
     unsubscribe()
-    installer()
+    initialize()
+}
+def initialize() {
+    log.info "${app.label} There are ${childApps.size()} child apps, ${childApps.label}"
+}
+def installCheck() {         
+	state.appInstalled = app.getInstallationState()
+	if (state.appInstalled != 'COMPLETE') {
+		section{paragraph "Please hit 'Done' to install '${app.label}' parent app "}
+  	}
+  	else {
+    	log.info "Parent Installed OK"
+  	}
 }
 
-def initialize() { // Runs on startup
-    int randomSixty = 1 + (Math.random() * 58)
-    log.info "Initialize running ${app.label} installer in ${randomSixty} seconds"
-    runIn(randomSixty,installer)
-}
-    
-def installer(){
-    state.timeMin = time*60 //do i need this, saves running the math every time
-    log.info "${app.label} installer - Master = $mastSwitch, controled = $lightControl, frequency ${state.timeMin}, random range $timeRan +/-"
-    if (mastSwitch != null) {
-        subscribe(mastSwitch, 'switch', mastSwitchState)
-        log.info "${app.label} installer subscribing"
-    }
-}
-
-void mastSwitchState(evt){
-    //log.debug "${app.label} mastSwitchState - ${evt.value}"
-    if (evt.value == 'on'){
-        state.running = true
-        //log.debug "${app.label} mastSwitchState - Evt ON starting the sim"
-        lightSwitching()
-    }
-    else{ //evt off
-        state.running = false
-        //log.debug "${app.label} mastSwitchState - Evt OFF"
-        if (immediatOff == true){
-            unschedule(switchControlOn)
-            unschedule(switchControlOff)
-            for (com.hubitat.app.DeviceWrapper dev in lightControl) {
-                dev.off()
-                if(logEnable == true) log.info "${app.label} mastSwitchState - Master off, immediately turning off $dev"
-                pause(3000)
-            }
-        }
-        else{ // immedate turn off is off
-            if(logEnable == true) log.info "${app.label} mastSwitchState - Master off, immediate off - run its couse and shut down"
-        }
-    }
-}
-
-void lightSwitching(){
-    //log.debug "${app.label} lightSwitching - Running = $state.running"
-    if (state.running == true){
-        int randomTime = (0 - timeRan) + (Math.random() * (timeRan*2)) + state.timeMin //random time
-        if (randomTime < 2) randomTime = 3 // if ran time to small
-        int randomDev = Math.random() * lightControl.size() // pick random device from the list
-        
-        if (dimValue != null && lightControl.get(randomDev).hasCapability("SwitchLevel") == true && dimValue != lightControl.get(randomDev).currentlevel){
-            if(logEnable == true) log.info "${app.label} setting dimmer level to $dimValue, this will turn light on imadiatly the 1st run unless presataging is on the device"
-            lightControl.get(randomDev)setLevel(dimValue)
-        }
-
-        runIn(randomTime, switchControlOn, [data: [dev:lightControl.get(randomDev).deviceId]])
-        runIn(randomTime*2, switchControlOff, [data: [dev:lightControl.get(randomDev).deviceId]])
-        if(logEnable == true) log.info "${app.label} - lightSwitching - schedule on and off for device ${lightControl.get(randomDev)}, on in ${randomTime}s, off in ${randomTime*2}s"
-    }
-    else {
-        //if(logEnable == true) log.info "${app.label} - lightSwitching false - all off to be safe"
-        if(DoubleCheckAllOff == true) {
-            for (com.hubitat.app.DeviceWrapper dev in lightControl) {
-                dev.off()
-                if(logEnable == true) log.info "${app.label} belt n braces turned off $dev"
-                pause(3000)
-            }
-        }
-        // no belt n braces
-    }
-}
-
-void switchControlOn(data){ //data.dev == device ID
-    if(state.running == true) {
-        def swtchDev = lightControl.find { it.deviceId == data.dev }
-        //log.debug "swtchDev $swtchDev, ${getObjectClassName(swtchDev)}"
-        swtchDev.on()
-        if(logEnable == true) log.info "${app.label} switchControlOn - ${swtchDev} switched on"
-    }
-    else { 
-        //log.debug "master switch must be off" 
-    }
-}
-void switchControlOff(data){
-    def swtchDev = lightControl.find { it.deviceId == data.dev }
-    //log.debug "swtchDev $swtchDev, ${getObjectClassName(swtchDev)}"
-    swtchDev.off()
-    if(logEnable == true) log.info "${app.label} switchControlOff - ${swtchDev} switched off"
-    lightSwitching()
-    
+def mainPage() {
+    dynamicPage(name: "mainPage") {
+    	installCheck()
+		
+		if (state.appInstalled == 'COMPLETE') {
+			section("Average") {
+				paragraph "This simulates lights for when you are away"
+			}
+  			section("At Home") {
+				app(name: "At Home Lights", appName: "At Home Lights", namespace: "Mark-C-UK", title: "<b>Add child</b> ", multiple: true)
+			}
+		}
+	}
 }
