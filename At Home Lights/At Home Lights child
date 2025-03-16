@@ -1,3 +1,8 @@
+/*
+14/0325 ver 1
+15/03/25 added dimmer control and better device handling logic
+16/03/25 reduced number of lightControl.get by declaring device as a varable object[ timing used def date1 = new Date() and date1.getTime()
+*/
 definition(
     parent: "Mark-C-UK:At Home Lights Parent",
     name: "At Home Lights",
@@ -54,15 +59,12 @@ def installer(){
 }
 
 void mastSwitchState(evt){
-    //log.debug "${app.label} mastSwitchState - ${evt.value}"
     if (evt.value == 'on'){
         state.running = true
-        //log.debug "${app.label} mastSwitchState - Evt ON starting the sim"
         lightSwitching()
     }
-    else{ //evt off
+    else{
         state.running = false
-        //log.debug "${app.label} mastSwitchState - Evt OFF"
         if (immediatOff == true){
             unschedule(switchControlOn)
             unschedule(switchControlOff)
@@ -72,30 +74,30 @@ void mastSwitchState(evt){
                 pause(3000)
             }
         }
-        else{ // immedate turn off is off
+        else{
             if(logEnable == true) log.info "${app.label} mastSwitchState - Master off, immediate off - run its couse and shut down"
         }
     }
 }
 
 void lightSwitching(){
-    //log.debug "${app.label} lightSwitching - Running = $state.running"
     if (state.running == true){
-        int randomTime = (0 - timeRan) + (Math.random() * (timeRan*2)) + state.timeMin //random time
-        if (randomTime < 2) randomTime = 3 // if ran time to small
-        int randomDev = Math.random() * lightControl.size() // pick random device from the list
+        int randomTime = (0 - timeRan) + (Math.random() * (timeRan*2)) + state.timeMin 
+        if (randomTime < 2) randomTime = 3 
+        int ranNum = Math.random() * lightControl.size()
+        def randomDev = lightControl.get(ranNum)
         
-        if (dimValue != null && lightControl.get(randomDev).hasCapability("SwitchLevel") == true && dimValue != lightControl.get(randomDev).currentlevel){
+        if (dimValue != null && randomDev.hasCapability("SwitchLevel") == true && dimValue != randomDev.currentlevel){
             if(logEnable == true) log.info "${app.label} setting dimmer level to $dimValue, this will turn light on imadiatly the 1st run unless presataging is on the device"
-            lightControl.get(randomDev)setLevel(dimValue)
+            randomDev.setLevel(dimValue)
         }
-
-        runIn(randomTime, switchControlOn, [data: [dev:lightControl.get(randomDev).deviceId]])
-        runIn(randomTime*2, switchControlOff, [data: [dev:lightControl.get(randomDev).deviceId]])
-        if(logEnable == true) log.info "${app.label} - lightSwitching - schedule on and off for device ${lightControl.get(randomDev)}, on in ${randomTime}s, off in ${randomTime*2}s"
+        
+        runIn(randomTime, switchControlOn, [data: [dev:randomDev.deviceId]])
+        runIn(randomTime*2, switchControlOff, [data: [dev:randomDev.deviceId]])
+        if(logEnable == true) log.info "${app.label} - lightSwitching - schedule on and off for device ${randomDev}, on in ${randomTime}s, off in ${randomTime*2}s"
     }
+        
     else {
-        //if(logEnable == true) log.info "${app.label} - lightSwitching false - all off to be safe"
         if(DoubleCheckAllOff == true) {
             for (com.hubitat.app.DeviceWrapper dev in lightControl) {
                 dev.off()
@@ -103,14 +105,12 @@ void lightSwitching(){
                 pause(3000)
             }
         }
-        // no belt n braces
     }
 }
 
-void switchControlOn(data){ //data.dev == device ID
+void switchControlOn(data){
     if(state.running == true) {
         def swtchDev = lightControl.find { it.deviceId == data.dev }
-        //log.debug "swtchDev $swtchDev, ${getObjectClassName(swtchDev)}"
         swtchDev.on()
         if(logEnable == true) log.info "${app.label} switchControlOn - ${swtchDev} switched on"
     }
@@ -120,7 +120,6 @@ void switchControlOn(data){ //data.dev == device ID
 }
 void switchControlOff(data){
     def swtchDev = lightControl.find { it.deviceId == data.dev }
-    //log.debug "swtchDev $swtchDev, ${getObjectClassName(swtchDev)}"
     swtchDev.off()
     if(logEnable == true) log.info "${app.label} switchControlOff - ${swtchDev} switched off"
     lightSwitching()
