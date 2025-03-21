@@ -1,0 +1,55 @@
+/**
+ 
+*/
+
+
+definition(
+    name: "AverageAllParent",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "Average - parent app",
+    category: "Convenience",
+	iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "")
+
+
+preferences {
+     page name: "mainPage", title: "", install: true, uninstall: true
+}
+def installed() {
+    log.info "Installed with settings: ${settings}"
+    initialize()
+}
+def updated() {
+    log.info "Updated with settings: ${settings}"
+    unsubscribe()
+    initialize()
+}
+def initialize() {
+    log.info "There are ${childApps.size()} child apps, ${childApps.label}"
+}
+def installCheck() {         
+	state.appInstalled = app.getInstallationState()
+	if (state.appInstalled != 'COMPLETE') {
+		section{paragraph "Please hit 'Done' to install '${app.label}' parent app "}
+  	}
+  	else {
+    	log.info "Parent Installed OK"
+  	}
+}
+
+def mainPage() {
+    dynamicPage(name: "mainPage") {
+    	installCheck()
+		
+		if (state.appInstalled == 'COMPLETE') {
+			section("Average") {
+				paragraph "This app averages out motion temp and lux"
+			}
+  			section("Average all") {
+				app(name: "Average all Child", appName: "AverageAll", namespace: "Mark-C-UK", title: "<b>Add child</b> ", multiple: true)
+			}
+		}
+	}
+}
