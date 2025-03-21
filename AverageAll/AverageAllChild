@@ -1,0 +1,126 @@
+/*
+21/03/25 changed for to each for speed less the motion check as it dosent houner 'return'
+*/
+definition(
+    parent: "Mark-C-UK:AverageAllParent",
+    name: "AverageAll",
+    namespace: "Mark-C-UK",
+    author: "Mark C",
+    description: "Average Illuminance/motion/temp",
+    category: "Convenience",
+    iconUrl: " ",
+    iconX2Url: "",
+    pausable: true
+)
+
+preferences {
+    section("Set your input and output devices"){
+        input "appName", "text", title: "Name this instance", submitOnChange: true, required: true
+			if(appName) app.updateLabel(appName)
+		input 'DevIn', 'capability.motionSensor', title: 'input devices to average', required: true, multiple: true
+		input 'DevOut', 'capability.motionSensor', title: 'output - create a hubitat virtual omni sensor 1st', required: true
+        input 'time', 'number', title: 'time in seconds after inactive to check other sensors'
+    }
+}
+
+def installed() {
+	installer()
+}
+def uninstalled(){
+	unsubscribe()
+}
+def updated() {
+    log.info "${app.label} Updated"
+    unsubscribe()
+    installer()
+}
+
+def initialize() { // Runs on startup
+    int randomSixty = 1 + (Math.random() * 58)
+    log.info "Initialize running ${app.label} installer in ${randomSixty} seconds"
+    runIn(randomSixty,installer)
+}
+    
+def installer(){
+    log.info "${app.label} installer $DevIn - $DevOut"
+    if (DevIn && DevOut) {
+        subscribe(DevIn, 'illuminance', luxinput)
+        subscribe(DevIn, 'temperature', tempinput)
+        subscribe(DevIn, 'motion', motioninput)
+        log.info "${app.label} installer subscribing"
+        luxinput()
+        tempinput()
+        motioninput()
+    }
+}
+
+def luxinput(evt){
+    //log.debug "${app.label} triggerd - lux ${evt}"
+    byte devscount = 0 
+    int devstotal = 0 
+    DevIn.each {
+        if (it.currentIlluminance != null){
+            devscount += 1
+            devstotal += it.currentIlluminance 
+            //log.debug "${app.label} -  $it - Lux count $devscount total $devstotal"
+        }
+    }
+    int out = devstotal/devscount
+   	DevOut.setIlluminance(out)
+    //log.debug "${app.label} sending lux $out to $DevOut"
+}
+
+def tempinput(evt){
+    //log.debug "${app.label} triggerd - temp ${evt}" 
+    byte devscount = 0 
+    float devstotal = 0 
+    DevIn.each {
+        if (it.currentTemperature != null){
+            devscount += 1
+            devstotal += it.currentTemperature
+            //log.debug "${app.label} - $it Temp count $devscount total $devstotal"
+        }
+    }
+    float out = (devstotal/devscount).round(2)
+    DevOut.setTemperature(out)
+    //log.debug "${app.label} sending temp ${out} to ${settings.DevOut}"
+}
+
+def motioninput(evt){
+    if(evt == null) { 
+        motioncheck()
+        return
+    }
+    //log.debug "${app.label} triggerd - ${evt.device} ${event.value}"
+    if (evt.value == "active"){
+        DevOut.motionActive()
+        //log.debug "${app.label} - $evt Active sent to $DevOut"
+    }
+    else {
+        if (time !=null){runIn(time, motioncheck)}
+        else { motioncheck() }
+    }
+}
+
+def motioncheck(){
+    //log.debug "${app.label} motionCheck"
+
+    for (com.hubitat.app.DeviceWrapper  sensor in settings.DevIn) { 
+            if (sensor.currentMotion == "active"){
+                //log.debug "${sensor.currentMotion} active - returning"
+                return
+            }
+        }
+
+/* This does not work retrun dosnt work
+    DevIn.each {
+        if (it.currentMotion == "active"){
+            log.debug "${app.label} - $it active - returning"
+            return
+        }
+    }
+*/
+    DevOut.motionInactive()
+    //log.debug "${app.label} - motion inactive sent to $DevOut"
+}
+
