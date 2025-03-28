@@ -34,7 +34,6 @@ metadata {
         capability "Switch"
        
         attribute "pingData", "string"
-        attribute "awaycount", "number"
             
     }   
 }
@@ -46,8 +45,8 @@ preferences {
     input("pingPeriod", "number", title: "Away Ping Repeat in Seconds,Zero to disable", defaultValue: 30, required:true, submitOnChange: true)
     input("pingPeriodHome", "number", title: "Home Ping Repeat in Seconds", defaultValue: 310, required:true, submitOnChange: true)
     input("awayPeriod", "number", title: "number of missed pings to be away", defaultValue: 5, required:true, submitOnChange: true)
-    input("debugEnable", "bool", title: "Enable debug logging?")
-    input("textLoggingEnabled", "bool", title: "Enable Text Logging", defaultValue:false)
+    input("debugEnable", "bool", title: "Enable debug logging?", defaultValue:false, submitOnChange: true)
+    input("textLoggingEnabled", "bool", title: "Enable Text Logging", defaultValue:false, submitOnChange: true)
 }
 
 def installed() {
@@ -61,10 +60,9 @@ def installed() {
 
 def configure() {
     unschedule()
-    state.away = 0
     updateAttr('pingData','')
     if (device.currentValue('presence') == null) updateAttr('presence','not present')
-    log.trace "configure - state away=${state.away} current presence ${device.currentValue("presence")}, updated next" 
+    log.trace "${device.displayName} - configure - state away=${state.away} current presence ${device.currentValue("presence")}, updated next" 
     updated()
 }
 
@@ -76,42 +74,47 @@ def initialize(){
     runIn(randomSixty,configure)
 }
 def updated(){
+    state.awayCount = 0
+    if (state.PP == null) state.PP = pingPeriodHome
     if (ipAdd == null){
-        log.warn 'no ip address'
+        log.warn "${device.displayName} - no ip address"
         updateAttr('pingData', 'no Device IP address')
         state.validIP = false
     }
     else if (validIP(ipAdd) == true){
-        if(debugEnable == true) log.debug 'Device IP address format valid'
+        if(settings.debugEnable == true) log.debug "${device.displayName} - Device IP address format valid"
         updateAttr('pingData', 'Device IP address format valid')
         state.validIP = true
     }
     else{
-        log.warn 'Device IP address format invalid'
+        log.warn "${device.displayName} - Device IP address format invalid"
         updateAttr('pingData', 'Device IP address format invalid')
         state.validIP = false
     }
              
     if (ipAddRout == null){
-        log.warn 'no ip addressvfor router'
+        log.warn "${device.displayName} - no ip addressvfor router"
         state.router = false
     }
     else if (validIP(ipAddRout) == true){
-        if(debugEnable == true) log.debug 'router IP address format valid'
+        if(settings.debugEnable == true) log.debug "${device.displayName} - router IP address format valid"
         state.router = true
     }
     else{
-        log.warn 'router IP address format invalid'
+        log.warn "${device.displayName} - router IP address format invalid"
         state.router = false
     }
-	if(debugEnable == true) runIn(1800,logsOff)
+	if(settings.debugEnable == true) runIn(1800,logsOff)
     
     if(state.validIP == true) pinger()
-    log.trace "updated with... valid IP=${state.validIP}, router checking=${state.router}, debugging=$debugEnable, number of pings to send $numPings, number of missed pings before away=$awayPeriod, ping freq- home ${pingPeriodHome} - away ${pingPeriod}"
+    log.trace "${device.displayName} - updated with... valid IP=${state.validIP}, router checking=${state.router}, debugging=$debugEnable, number of pings to send $numPings, number of missed pings before away=$awayPeriod, ping freq- home ${pingPeriodHome} - away ${pingPeriod}"
 }
 
 def refresh() {
 	unschedule(refresh)
+}
+def uninstalled(){
+    unschedule()
 }
              
 def updateAttr(aKey, aValue){
@@ -119,34 +122,36 @@ def updateAttr(aKey, aValue){
 }
 
 def pinger(){ 
-    int pingPeriodMod 
-    if (settings.debugEnable == true) log.debug 'Ping initiated'
+    // if (debugEnable == true) log.debug 'Ping initiated'
     if (state.responseReady == false){
-        log.warn 'not ready'
+        log.warn "${device.displayName} - pinger not ready"
         if(pingPeriod > 0) runIn(pingPeriod, 'pinger')
         return
     }
-    if (sendPing(settings.ipAdd) < 100){
-        pingPeriodMod = pingPeriodHome // when home dont ping as often
-        if (state.away != 0) state.away = 0
-        if(settings.textLoggingEnabled == true) log.info "Presence 'present' for $ipAdd"
-        updateAttr('presence','present')
-        updateAttr('switch','on')
-        updateAttr('awaycount', state.away)
+    if (sendPing(ipAdd) < 100){
+        if (state.awayCount != 0 ) {
+            state.PP = pingPeriodHome // when home dont ping as often
+            state.awayCount = 0
+        }
+        if (device.currentValue('presence') != 'present'){
+            updateAttr('presence','present')
+            updateAttr('switch','on')
+        }
+        if(textLoggingEnabled == true) log.info "Presence 'present' for $ipAdd"
     }
     else {
-        pingPeriodMod = pingPeriod
         if (device.currentValue('presence') == 'not present'){
-            if(settings.textLoggingEnabled == true) log.info "Presence not present already $ipAdd, ${state.away} number of times"
+            if(textLoggingEnabled == true) log.info "${device.displayName} - Presence not present already $ipAdd, ${state.awayCount} number of times"
         }
         else{
-            state.away += 1
-            updateAttr('awaycount', state.away)
-            if(settings.debugEnable == true) log.debug "Presence not presentfor $ipAdd , NP ${state.away}"
-            if (state.away > awayPeriod){
+            state.PP = pingPeriod
+            state.awayCount += 1
+            // if(debugEnable == true) log.debug "${device.displayName} - Presence not presentfor $ipAdd , NP ${state.away}"
+            if (state.awayCount > awayPeriod){
+                
                 if (state.router == true){ // start use router option
                     if (sendPing(ipAddRout) < 100){
-                        //if(settings.textLoggingEnabled == true) log.info "Presence set to 'not present' for $ipAdd"
+                        //if(textLoggingEnabled == true) log.info "Presence set to 'not present' for $ipAdd"
                         updateAttr('presence','not present')
                         updateAttr('switch','off')
                     }
@@ -154,40 +159,35 @@ def pinger(){
                         updateAttr('pingData','router not present')
                     }
                 } //end use router option
+                
                 else {
                     updateAttr('presence','not present')
                     updateAttr('switch','off')
                 }
                 //if(settings.textLoggingEnabled == true) log.debug "not present' for $ipAdd, ${state.away} number of times"
             }
-            if(settings.textLoggingEnabled == true) log.debug "not present' for $ipAdd, ${state.away} number of times"
+            if(textLoggingEnabled == true) log.debug "${device.displayName} - not present' for $ipAdd, ${state.awayCount} number of times"
         }
     }
-    if(settings.pingPeriod > 0) runIn(pingPeriodMod, 'pinger')
-    if(settings.textLoggingEnabled == true) log.info "Next ping in '$pingPeriodMod' seconds"
+    if(pingPeriod > 0) runIn(state.PP, 'pinger')
+    if(textLoggingEnabled == true) log.info "${device.displayName} - Next ping in '${state.PP}' seconds"
 }
              
 def sendPing(ipAddress){
-            if(debugEnable == true) log.debug 'Hub pinging'
-            state.responseReady = false
-    
-            hubitat.helper.NetworkUtils.PingData pingData = hubitat.helper.NetworkUtils.ping(ipAddress, numPings.toInteger())
-           // int pTran = pingData.packetsTransmitted.toInteger()
-            if (pingData.packetsTransmitted.toInteger() == 0){ // 2.2.7.121 bug returns all zeroes on not found
-                pingData.packetsTransmitted = numPings
-                pingData.packetLoss = 100
-            }
-  
-            //String pingStats = "Transmitted: ${pingData.packetsTransmitted}, Received: ${pingData.packetsReceived}, %Lost: ${pingData.packetLoss}"
-    if(textLoggingEnabled == true) log.info "Ping Stats for $ipAddress: Transmitted: ${pingData.packetsTransmitted}, Received: ${pingData.packetsReceived}, %Lost: ${pingData.packetLoss}, min= ${pingData.rttMin}, avg= ${pingData.rttAvg}, max= ${pingData.rttMax} ms"
-            //updateAttr("pingData", "$ipAddress: $pingStats") 
+    //if(debugEnable == true) log.debug "${device.displayName} - Hub pinging"
+    state.responseReady = false
+    hubitat.helper.NetworkUtils.PingData pingData = hubitat.helper.NetworkUtils.ping(ipAddress, numPings.toInteger())
+    if (pingData.packetsTransmitted.toInteger() == 0){ // 2.2.7.121 bug returns all zeroes on not found
+        pingData.packetsTransmitted = numPings
+        pingData.packetLoss = 100
+    }
+    if(textLoggingEnabled == true) log.info "${device.displayName} - Ping Stats for $ipAddress: Transmitted: ${pingData.packetsTransmitted}, Received: ${pingData.packetsReceived}, %Lost: ${pingData.packetLoss}, min= ${pingData.rttMin}, avg= ${pingData.rttAvg}, max= ${pingData.rttMax} ms"
     state.responseReady = true
     return pingData.packetLoss
-
 }
 
-def off(){log.warn "OFF no action"}
-def on(){log.warn "ON no action"}
+def off(){log.warn "${device.displayName} - OFF no action"}
+def on(){log.warn "${device.displayName} - ON no action"}
        
 def validIP(ipAddress){
     regxPattern =/^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
