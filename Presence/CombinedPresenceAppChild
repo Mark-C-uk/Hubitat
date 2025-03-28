@@ -115,17 +115,13 @@ preferences {
 	}
 }
 
-
 def installed() {
 	log.info "Installed with settings: ${settings}"
-
 	initialize()
 }
 
-
 def updated() {
 	log.info "Updated with settings: ${settings}"
-
 	initialize()
 }
 
@@ -133,38 +129,31 @@ def initialize() {
 	unschedule()
 	unsubscribe()
 
-    // Wifi-based sensors can only trigger arrival
 	subscribe(inputSensorsWifi, "presence.present", arrivedHandler)
     subscribe(inputSensorsWifi, "presence.not present", departedHandler) //mc added
 
-    // Geofencing sensors can trigger EITHER arrival or departure
     subscribe(inputSensorsGps, "presence.present", arrivedHandler)
     subscribe(inputSensorsGps, "presence.not present", departedHandler)
-//MC getValues()
-    //if (outputSensor("capability.notification") == true) {
-        log.info "sensor subscribeing to notifications"
-        subscribe(outputSensor, "notification", NoteHandler) //assuming custom virtal driver
-   // }
-//MC
+    
+    subscribe(outputSensor, "notification", NoteHandler) //assuming custom virtal driver
+   
+    log.info "sensor subscribeing to notifications"
+
 	app.updateLabel("Standard Combiner for ${outputSensor.displayName}")
+    
     def today = timeToday(null, location.timeZone) 
     use (groovy.time.TimeCategory) {
-        //state.lastInconsistencyWarningTime = new Date()-24.hours
-        //state.lastConsistentTime = new Date()
         state.lastInconsistencyWarningTime = today-24.hours
         state.lastConsistentTime = today
     }
 	
-	//runEvery1Minute(checkForInconsistencies)
-    //	runEvery5Minutes(checkForInconsistencies)
-    //byte randomSixty = Math.abs(new Random().nextInt() % 59)
     int randomSixty = 1 + (Math.random() * 58)
     schedule("${randomSixty} 0/10 * 1/1 * ? *", checkForInconsistencies)
 
 }
 //mc
 def NoteHandler(text){
-    log.info "message recived from $outputSensor ${text.value} sending to $inputSensorsGps"
+    if (enableLogging) log.info "message recived from $outputSensor ${text.value} sending to $inputSensorsGps"
     inputSensorsGps.deviceNotification(text.value)
 }
 //mc 
@@ -174,10 +163,9 @@ def uninstalled(){
     unschedule()
 	unsubscribe()
 }
-    
 
 def checkForInconsistencies() {
-    log "***** checkForInconsistencies()"
+    if (enableLogging) log.debug "***** checkForInconsistencies()"
     
 	def inputsAreAllPresent = true
 	def inputsAreAllNotPresent = true
@@ -203,22 +191,21 @@ def checkForInconsistencies() {
 	}
 //mc add to check if gps and wifi align end    
 	def inputsAreInconsistent = !(inputsAreAllPresent || inputsAreAllNotPresent)
-	//log.debug inputsAreInconsistent
-    log "inputsAreAllPresent ${inputsAreAllPresent}"
-	log "inputsAreAllNotPresent ${inputsAreAllNotPresent}"
-	log "inputsAreInconsistent ${inputsAreInconsistent}"
+
+    if (enableLogging) {
+        log.debug "inputsAreAllPresent ${inputsAreAllPresent}"
+	    log.debug "inputsAreAllNotPresent ${inputsAreAllNotPresent}"
+	    log.debug "inputsAreInconsistent ${inputsAreInconsistent}"
+    }
 	
-	//def currentTime = new Date()
     def currentTime = timeToday(null, location.timeZone) 
 	
 	if (inputsAreInconsistent) {
-		//def lastConsistentTime = new Date()
         def lastConsistentTime = currentTime
 		if (state.lastConsistentTime) {
 			lastConsistentTime = Date.parse("yyyy-MM-dd'T'HH:mm:ssZ", state.lastConsistentTime)
 		}
 		
-		//def lastInconsistencyWarningTime = new Date()
         def lastInconsistencyWarningTime = currentTime
 		if (state.lastInconsistencyWarningTime) {
 			lastInconsistencyWarningTime = Date.parse("yyyy-MM-dd'T'HH:mm:ssZ", state.lastInconsistencyWarningTime)
@@ -227,41 +214,48 @@ def checkForInconsistencies() {
 		def timeSinceConsistency = TimeCategory.minus(currentTime, lastConsistentTime)
 		def timeSinceLastWarning = TimeCategory.minus(currentTime, lastInconsistencyWarningTime)
 		
-        log "timeSinceConsistency.minutes: ${timeSinceConsistency.minutes}"
-        log "timeSinceConsistency.hours: ${timeSinceConsistency.hours}"
-        log "timeSinceConsistency.days: ${timeSinceConsistency.days}"
-        log "timeSinceLastWarning.hours ${timeSinceLastWarning.hours}"
-        log "timeSinceLastWarning.days ${timeSinceLastWarning.days}"
+        if (enableLogging) {
+            log.debug "timeSinceConsistency.minutes: ${timeSinceConsistency.minutes}"
+            log.debug "timeSinceConsistency.hours: ${timeSinceConsistency.hours}"
+            log.debug "timeSinceConsistency.days: ${timeSinceConsistency.days}"
+            log.debug "timeSinceLastWarning.hours ${timeSinceLastWarning.hours}"
+            log.debug "timeSinceLastWarning.days ${timeSinceLastWarning.days}"
+        }
         
 		if ((timeSinceConsistency.minutes > 30 || timeSinceConsistency.hours > 0 || timeSinceConsistency.days > 0) && (timeSinceLastWarning.hours > 18 || timeSinceLastWarning.days > 0)) {
-			def msg = "Input sensors for ${outputSensor.displayName} have been inconsistent for 30 minutes.  This may mean one of your presence sensors is not updating."
-			
-			log(msg)
-            
-			if (notifyAboutInconsistencies) {
-				sendNotification(msg)
-			}
+            def msg = "Input sensors for ${outputSensor.displayName} have been inconsistent for 30 minutes. This may mean one of your presence sensors is not updating. Sensor State = "
+    
+            if (inputSensorsWifi != null){
+                for (com.hubitat.app.DeviceWrapper dev in inputSensorsWifi){
+                    msg += dev.device.displayName + ", " + dev.currentPresence +". "
+                }
+            }   
+            if (inputSensorsGps != null){
+                for (com.hubitat.app.DeviceWrapper dev in inputSensorsGps){
+                    msg += dev.device.displayName + ", " + dev.currentPresence +". "
+                }
+            }
+            msg += "Mode is " + location.mode
+            if (enableLogging) log.debug msg
+			if (notifyAboutInconsistencies) sendNotification(msg)
 			
 			state.lastInconsistencyWarningTime = currentTime
 		}
 	}
 	else {
-		state.lastConsistentTime = currentTime
+        state.lastConsistentTime = currentTime
 	}
 }
 
-
 def sendNotification(msg) {
 	if (msg && msg.size() > 0) {
-		if (notificationDevice) {
-			notificationDevice.deviceNotification(msg)
-		}
+		if (notificationDevice) notificationDevice.deviceNotification(msg)
 	}
 }
 
 
 def arrivedHandler(evt) {
-	log "${evt.device.name} arrived."	
+	if (enableLogging) log.debug "${evt.device.name} arrived."	
 	//log.debug groovy.json.JsonOutput.toJson(evt)
 
 	def oldPresent = outputSensor.currentValue("presence") == "present"
@@ -269,45 +263,30 @@ def arrivedHandler(evt) {
 	
 	if (!oldPresent && newPresent) {
 		outputSensor.arrived(evt.device.name)
-		
-        log "${outputSensor.displayName}.arrived()"	
-
+        if (enableLogging) log.debug "${outputSensor.displayName}.arrived()"	
         if (notifyAboutStateChanges) sendNotification("Arrived: ${outputSensor.label}")
-        
 	}
 }
 
 
 def departedHandler(evt) {
-	log "${evt.device.name} departed."	
+	if (enableLogging) log.debug "${evt.device.name} departed."	
 	//log.debug groovy.json.JsonOutput.toJson(evt)
 
 	def oldPresent = outputSensor.currentValue("presence") == "present"
 	def newPresent = false
 	
 	if (oldPresent && !newPresent) {
-		outputSensor.departed(evt.device.label)
-
-    	log "${outputSensor.displayName}.departed()"
-			
-        if (notifyAboutStateChanges) {
-            sendNotification("Departed: ${outputSensor.label}")
-        }
+		outputSensor.departed(evt.device.name)
+    	if (enableLogging) log.debug "${outputSensor.displayName}.departed()"
+        if (notifyAboutStateChanges) sendNotification("Departed: ${outputSensor.label}")
 	}
 }
-
 
 def getFormat(type, myText=""){
 	if(type == "header-green") return "<div style='color:#ffffff;font-weight: bold;background-color:#81BC00;border: 1px solid;box-shadow: 2px 3px #A9A9A9'>${myText}</div>"
     if(type == "line") return "\n<hr style='background-color:#1A77C9; height: 1px; border: 0;'></hr>"
 	if(type == "title") return "<h2 style='color:#1A77C9;font-weight: bold'>${myText}</h2>"
-}
-
-
-void log(msg) {
-	if (enableLogging) {
-		log.debug msg
-	}
 }
 
 
